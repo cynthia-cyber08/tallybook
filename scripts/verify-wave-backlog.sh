@@ -2,7 +2,7 @@
 # Verify the wave backlog programmatically. Exits non-zero on any failure.
 set -uo pipefail
 cd "$(dirname "$0")/.."
-BACKLOG="docs/WAVE2_BACKLOG.json"
+BACKLOG="${BACKLOG:-$(ls -1 docs/WAVE*_BACKLOG.json | sort -V | tail -1)}"
 fail=0
 chk() { if [ "$2" = "$3" ]; then echo "  PASS  $1 ($2)"; else echo "  FAIL  $1: expected $3, got $2"; fail=1; fi; }
 

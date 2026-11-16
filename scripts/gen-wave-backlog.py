@@ -8,7 +8,7 @@ Also validates the backlog, and exits non-zero if anything is malformed —
 scripts/create-wave-issues.sh calls this first and refuses to touch GitHub
 if it fails.
 """
-import json, sys, os, collections
+import json, sys, os, re, collections
 
 # Point values per complexity tier. Set by the project maintainer, whose
 # discretion this is; a 1.7x uniform scale-up of the original 200/150/100,
@@ -18,6 +18,18 @@ import json, sys, os, collections
 POINTS = {"high": 340, "medium": 255, "low": 165}
 REQUIRED = ("title", "complexity", "area", "description", "why", "criteria", "guidance")
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Which wave to operate on. Defaults to the highest-numbered WAVE*_BACKLOG.json
+# present, so adding a wave needs no edit here; override with WAVE=n.
+def _latest_wave():
+    import glob
+    ns = []
+    for f in glob.glob(os.path.join(REPO_ROOT, "docs/WAVE*_BACKLOG.json")):
+        m = re.search(r"WAVE(\d+)_BACKLOG\.json$", f)
+        if m:
+            ns.append(int(m.group(1)))
+    return str(max(ns)) if ns else "2"
+
+WAVE = os.environ.get("WAVE") or _latest_wave()
 
 
 def validate(issues):
@@ -61,7 +73,7 @@ def body(issue):
         out.append(f"\n**Entry point:** `{issue['entry_point']}`")
     out += ["\n---\n",
             f"*Area: `{issue['area']}` · complexity: `{issue['complexity']}`. Filed as part of "
-            f"the wave 2 backlog (`docs/WAVE2_BACKLOG.json`); every issue in it cites a file and "
+            f"the wave {WAVE} backlog (`docs/WAVE{WAVE}_BACKLOG.json`); every issue in it cites a file and "
             f"line verified to exist at the time of filing. Point values live in the backlog, "
             f"not here, so the ladder can be repriced without editing filed issues.*"]
     return "\n".join(out)
@@ -71,10 +83,10 @@ def markdown(issues):
     tiers = collections.Counter(i["complexity"] for i in issues)
     total = sum(POINTS[i["complexity"]] for i in issues)
     L = ["<!-- GENERATED FILE - DO NOT EDIT BY HAND.",
-         "     Source of truth: docs/WAVE2_BACKLOG.json",
+         f"     Source of truth: docs/WAVE{WAVE}_BACKLOG.json",
          "     Regenerate with: python3 scripts/gen-wave-backlog.py  (or `make backlog`)",
          "     Any hand edit here is lost on the next regeneration. -->",
-         "", "# Wave 2 backlog", "",
+         "", f"# Wave {WAVE} backlog", "",
          f"**{len(issues)} issues · {total} points.**", "",
          "| Tier | Label | Count | Points each | Subtotal |",
          "|---|---|---:|---:|---:|"]
@@ -106,7 +118,7 @@ def markdown(issues):
 
 
 def main():
-    src = os.path.join(REPO_ROOT, "docs/WAVE2_BACKLOG.json")
+    src = os.path.join(REPO_ROOT, f"docs/WAVE{WAVE}_BACKLOG.json")
     issues = json.load(open(src))
     problems = validate(issues)
     if problems:
@@ -114,7 +126,7 @@ def main():
         for p in problems:
             print(f"  - {p}", file=sys.stderr)
         return 1
-    dst = os.path.join(REPO_ROOT, "docs/WAVE2_BACKLOG.md")
+    dst = os.path.join(REPO_ROOT, f"docs/WAVE{WAVE}_BACKLOG.md")
     open(dst, "w").write(markdown(issues))
     tiers = collections.Counter(i["complexity"] for i in issues)
     total = sum(POINTS[i["complexity"]] for i in issues)
