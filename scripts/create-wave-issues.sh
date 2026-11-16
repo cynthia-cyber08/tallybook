@@ -13,7 +13,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 BACKLOG="${BACKLOG:-$(ls -1 docs/WAVE*_BACKLOG.json | sort -V | tail -1)}"
-PACE_SECONDS=1.5          # GitHub's secondary content-creation limit returns a
+PACE_SECONDS="${PACE_SECONDS:-3}"          # GitHub's secondary content-creation limit returns a
                           # bare 403, not a documented rate-limit error, so pace
                           # creations rather than relying on detecting it.
 APPLY=0
