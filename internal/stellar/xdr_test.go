@@ -164,6 +164,30 @@ func ExampleDecodeMap() {
 	// non-symbol key rejected: true
 }
 
+func ExampleDecodeI128() {
+	v, err := ScvI128(big.NewInt(-1_000_000))
+	if err != nil {
+		panic(err)
+	}
+	n, err := DecodeI128(v)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(n)
+	// Output:
+	// -1000000
+}
+
+func ExampleDecodeBytes() {
+	got, err := DecodeBytes(ScvBytes([]byte{0xde, 0xad, 0xbe, 0xef}))
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("%x\n", got)
+	// Output:
+	// deadbeef
+}
+
 func TestScvU32_RoundTrip(t *testing.T) {
 	for _, v := range []uint32{0, 1, 42, 1 << 31, 1<<32 - 1} {
 		got, err := DecodeU32(ScvU32(v))
