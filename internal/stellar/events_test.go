@@ -407,6 +407,33 @@ func TestDecodeChannelWithdrawEvent_LiveEvent(t *testing.T) {
 	}
 }
 
+func ExampleDecodeChannelWithdrawEvent() {
+	// A two-field Withdraw event (to, amount) built with the XDR helpers.
+	to := "GCWV2YQTXWP72QTU5YX5FM237RCHY6REV6BL6TKBEFCQ5R2QCTX67VUG"
+	toVal, err := ScvAddress(to)
+	if err != nil {
+		panic(err)
+	}
+	amountVal, err := ScvI128(big.NewInt(5_000_000))
+	if err != nil {
+		panic(err)
+	}
+	valueB64, err := MarshalScValBase64(ScvVec([]xdr.ScVal{toVal, amountVal}))
+	if err != nil {
+		panic(err)
+	}
+
+	ev, err := DecodeChannelWithdrawEvent(valueB64)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("to:", ev.To)
+	fmt.Println("amount:", ev.Amount)
+	// Output:
+	// to: GCWV2YQTXWP72QTU5YX5FM237RCHY6REV6BL6TKBEFCQ5R2QCTX67VUG
+	// amount: 5000000
+}
+
 func TestDecodeChannelRefundEvent_RoundTrip(t *testing.T) {
 	from := "GAAACAQDAQCQMBYIBEFAWDANBYHRAEISCMKBKFQXDAMRUGY4DUPB7JZX"
 	fromVal, err := ScvAddress(from)

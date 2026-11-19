@@ -35,6 +35,28 @@ func ExampleDecodeU32() {
 	// 42
 }
 
+func ExampleDecodeI32() {
+	i := xdr.Int32(-42)
+	v, err := DecodeI32(xdr.ScVal{Type: xdr.ScValTypeScvI32, I32: &i})
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(v)
+	// Output:
+	// -42
+}
+
+func ExampleDecodeI64() {
+	i := xdr.Int64(9007199254740992)
+	v, err := DecodeI64(xdr.ScVal{Type: xdr.ScValTypeScvI64, I64: &i})
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(v)
+	// Output:
+	// 9007199254740992
+}
+
 func ExampleScvI32() {
 	v, err := DecodeI32(ScvI32(-42))
 	if err != nil {
