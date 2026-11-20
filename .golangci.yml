@@ -1,0 +1,24 @@
+# golangci-lint configuration.
+#
+# Findings triage (run against this codebase, 2026-11-20):
+#
+#   errorlint (8 findings): real. All eight were non-wrapping %v verbs on error
+#     values or direct != comparisons against sentinel errors — both patterns
+#     CLAUDE.md §8 already prohibits. Fixed in the same commit that added this
+#     file. errorlint catches these before they reach review; it earns its place.
+#
+#   bodyclose (0 findings): nothing to fix. The Soroban RPC client in
+#     internal/stellar/rpc.go closes response bodies through the standard
+#     defer pattern. Including bodyclose would add CI time for no current benefit;
+#     omitted and can be added if the HTTP surface grows.
+#
+#   staticcheck is already a required CI job — not duplicated here.
+#
+# Versioned in the CI workflow alongside this file; bump both together.
+
+version: "2"
+
+linters:
+  default: none
+  enable:
+    - errorlint

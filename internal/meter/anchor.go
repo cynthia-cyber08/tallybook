@@ -540,7 +540,7 @@ func (a *Anchorer) AnchorPeriod(
 	if err != nil {
 		if isPermanentAnchorError(err) {
 			if markErr := a.markAttemptFailed(ctx, attemptID, err.Error()); markErr != nil {
-				return nil, fmt.Errorf("meter: anchor period %d: send failed (%v) and marking the attempt failed also failed: %w",
+				return nil, fmt.Errorf("meter: anchor period %d: send failed (%w) and marking the attempt failed also failed: %w",
 					periodID, err, markErr)
 			}
 			return nil, fmt.Errorf("meter: anchor period %d: %w", periodID, err)

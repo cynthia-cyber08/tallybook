@@ -212,7 +212,7 @@ func TestMetricsConcurrentReadersServeWithinTimeout(t *testing.T) {
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(listener) }()
 	t.Cleanup(func() {
-		if err := srv.Close(); err != nil && err != http.ErrServerClosed {
+		if err := srv.Close(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			t.Errorf("close metrics server: %v", err)
 		}
 		<-serveErr
