@@ -342,3 +342,35 @@ func ExampleChannel_Close() {
 	}
 	fmt.Println("close submitted:", hash)
 }
+
+// ExampleChannel_CloseStart shows the call shape of Channel.CloseStart: the
+// funder initiates closing the channel, which becomes effective after
+// RefundWaitingPeriod ledgers.
+//
+// There is deliberately no // Output: comment. CloseStart submits an on-chain
+// transaction via Soroban RPC and requires a live network, an active channel,
+// and a funded funder account. Without an Output comment, go test compiles
+// this example to protect against signature drift without executing it or
+// opening a live network connection.
+func ExampleChannel_CloseStart() {
+	const (
+		contractID        = "CB2IEP4SQ2GC5747HFHNMXEYWEULC5Z5TTTLET2QA4CAA5SYCWAXFKAW"
+		networkPassphrase = "Test SDF Network ; September 2015"
+	)
+	funder, err := keypair.FromRawSeed([32]byte{1})
+	if err != nil {
+		fmt.Println("funder key:", err)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	channel := NewChannel(NewClient("https://soroban-testnet.stellar.org", nil), contractID, networkPassphrase)
+	hash, err := channel.CloseStart(ctx, funder)
+	if err != nil {
+		fmt.Println("close_start:", err)
+		return
+	}
+	fmt.Println("close_start submitted:", hash)
+}
