@@ -152,6 +152,19 @@ func TestExposure_Age(t *testing.T) {
 	}
 }
 
+func ExampleExposure_Age() {
+	since := time.Date(2025, 1, 1, 10, 0, 0, 0, time.UTC)
+	now := time.Date(2025, 1, 1, 12, 30, 0, 0, time.UTC)
+	exp := &Exposure{OldestUnsettledSince: &since}
+	fmt.Println(exp.Age(now))
+
+	empty := &Exposure{}
+	fmt.Println(empty.Age(now))
+	// Output:
+	// 2h30m0s
+	// 0s
+}
+
 // ExampleNewCalculator shows both halves of NewCalculator's contract.
 // NewCalculator itself never fails — it has no error return and stores pool
 // verbatim (see its doc comment) — so the rejection half only exists at the

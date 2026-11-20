@@ -336,6 +336,20 @@ func TestDecodeChannelOpenEvent_RoundTrip(t *testing.T) {
 	}
 }
 
+func ExampleDecodeChannelCloseEvent() {
+	valueB64, err := MarshalScValBase64(ScvVec([]xdr.ScVal{ScvU32(4700123)}))
+	if err != nil {
+		log.Fatal(err)
+	}
+	ev, err := DecodeChannelCloseEvent(valueB64)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(ev.EffectiveAtLedger)
+	// Output:
+	// 4700123
+}
+
 func TestDecodeChannelCloseEvent_RoundTrip(t *testing.T) {
 	valueB64, err := MarshalScValBase64(ScvVec([]xdr.ScVal{ScvU32(4700123)}))
 	if err != nil {
