@@ -208,6 +208,46 @@ func ExampleLedgerEntryChange() {
 	// created LedgerEntryTypeContractData: before=false after=true
 }
 
+// ExampleLedgerEntryResult reads two LedgerEntryResults as GetLedgerEntries
+// fills them in from recorded testnet responses. Every field is set by the
+// RPC node, never by the caller. XDR decodes as LedgerEntryData, the same
+// way fetchSequenceNumber in invoke.go reads an account's sequence number.
+// LiveUntilLedgerSeq only applies to Soroban entries, which carry a TTL: a
+// classic account entry has none, the node omits the field, and it decodes
+// to 0, the same as the zero value. So 0 here means "no TTL", not "expired".
+func ExampleLedgerEntryResult() {
+	var zero LedgerEntryResult
+	fmt.Println("zero value: lastModified =", zero.LastModifiedLedgerSeq, "liveUntil =", zero.LiveUntilLedgerSeq)
+
+	// A contract instance entry (testdata/stellar/get_ledger_entries.json)
+	// and a classic account entry fetched for a sequence number
+	// (testdata/stellar/pricebook_publish_01_getledgerentries_account.json).
+	fixtures := []struct{ name, key string }{
+		{"get_ledger_entries", "AAAABgAAAAHXkotywnA8z+r365/0701QSlWouXn8m0UOoshCtNHOYQAAABQAAAAB"},
+		{"pricebook_publish_01_getledgerentries_account", "AAAAAAAAAACxo2Y62NJF7xUghukoiQ0XteQyuJfdetk9gOOSFFdt4A=="},
+	}
+	for _, f := range fixtures {
+		client, stop := exampleFixtureClient(f.name)
+		result, err := client.GetLedgerEntries(context.Background(), []string{f.key})
+		stop()
+		if err != nil {
+			log.Fatal(err)
+		}
+		entry := result.Entries[0]
+
+		var data xdr.LedgerEntryData
+		if err := xdr.SafeUnmarshalBase64(entry.XDR, &data); err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("%s: lastModified = %d liveUntil = %d\n", data.Type, entry.LastModifiedLedgerSeq, entry.LiveUntilLedgerSeq)
+	}
+
+	// Output:
+	// zero value: lastModified = 0 liveUntil = 0
+	// LedgerEntryTypeContractData: lastModified = 4609662 liveUntil = 7561567
+	// LedgerEntryTypeAccount: lastModified = 4611396 liveUntil = 0
+}
+
 func TestClient_GetLatestLedger(t *testing.T) {
 	srv, lastRequest := fixtureServer(t, "get_latest_ledger")
 	c := NewClient(srv.URL, nil)
