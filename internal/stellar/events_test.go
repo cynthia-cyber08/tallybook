@@ -451,6 +451,45 @@ func TestDecodeChannelRefundEvent_RoundTrip(t *testing.T) {
 	}
 }
 
+func ExampleDecodeChannelOpenEvent() {
+	// A synthetically constructed one-way-channel Open event: from,
+	// commitment_key, to, token, amount, refund_waiting_period — in the
+	// field order event.rs declares.
+	const openValueB64 = "AAAAEAAAAAEAAAAGAAAAEgAAAAAAAAAAAAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8AAAANAAAAIAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fAAAAEgAAAAAAAAAArV1iE72f/UJ07i/Ss1v8RHx6JK+Cv01BIUUOx1AU7+8AAAASAAAAAdeSi3LCcDzP6vfrn/TvTVBKVai5efybRQ6iyEK00c5hAAAACgAAAAAAAAAAAAAAAAAAAfQAAAADAAAAFA=="
+	ev, err := DecodeChannelOpenEvent(openValueB64)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("from:", ev.From)
+	fmt.Printf("commitment_key: %x\n", ev.CommitmentKey)
+	fmt.Println("to:", ev.To)
+	fmt.Println("token:", ev.Token)
+	fmt.Println("amount:", ev.Amount)
+	fmt.Println("refund_waiting_period:", ev.RefundWaitingPeriod)
+	// Output:
+	// from: GAAACAQDAQCQMBYIBEFAWDANBYHRAEISCMKBKFQXDAMRUGY4DUPB7JZX
+	// commitment_key: 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+	// to: GCWV2YQTXWP72QTU5YX5FM237RCHY6REV6BL6TKBEFCQ5R2QCTX67VUG
+	// token: CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC
+	// amount: 500
+	// refund_waiting_period: 20
+}
+
+func ExampleDecodeChannelRefundEvent() {
+	// A synthetically constructed one-way-channel Refund event: from and
+	// the entire remaining balance returned to the payer (§1).
+	const refundValueB64 = "AAAAEAAAAAEAAAACAAAAEgAAAAAAAAAAAAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8AAAAKAAAAAAAAAAAAAAAAAAAnDw=="
+	ev, err := DecodeChannelRefundEvent(refundValueB64)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("from:", ev.From)
+	fmt.Println("amount:", ev.Amount)
+	// Output:
+	// from: GAAACAQDAQCQMBYIBEFAWDANBYHRAEISCMKBKFQXDAMRUGY4DUPB7JZX
+	// amount: 9999
+}
+
 func TestDecodeEventFields_RejectsWrongLength(t *testing.T) {
 	valueB64, err := MarshalScValBase64(ScvVec([]xdr.ScVal{ScvU32(1)}))
 	if err != nil {
