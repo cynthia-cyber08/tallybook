@@ -130,5 +130,15 @@ jobs:
           go test ./internal/meter -run='^$' -fuzz=FuzzParseSchedule -fuzztime=2s
           go test ./internal/merkle -run='^$' -fuzz=FuzzBuildTreeProofAgreement -fuzztime=2s
 
+      # Assert CLAUDE.md §8: "No panics outside main startup validation.
+      # A library function returns an error." Any panic( in non-test code
+      # under internal/ is a violation; the only allowed site is main.
+      - name: assert internal/ is panic-free
+        run: |
+          if grep -rn --include='*.go' --exclude='*_test.go' 'panic(' internal/; then
+            echo "Found panic() in non-test code under internal/ — CLAUDE.md §8 forbids panics outside main startup validation"
+            exit 1
+          fi
+
       - name: go test
         run: make test-ci
