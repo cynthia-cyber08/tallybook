@@ -122,6 +122,30 @@ func ExampleScvAddress() {
 	// GAAACAQDAQCQMBYIBEFAWDANBYHRAEISCMKBKFQXDAMRUGY4DUPB7JZX
 }
 
+func ExampleDecodeAddress() {
+	v, err := ScvAddress("GAAACAQDAQCQMBYIBEFAWDANBYHRAEISCMKBKFQXDAMRUGY4DUPB7JZX")
+	if err != nil {
+		log.Fatal(err)
+	}
+	addr, err := DecodeAddress(v)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(addr)
+	// Output:
+	// GAAACAQDAQCQMBYIBEFAWDANBYHRAEISCMKBKFQXDAMRUGY4DUPB7JZX
+}
+
+func ExampleDecodeBool() {
+	v, err := DecodeBool(ScvBool(true))
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(v)
+	// Output:
+	// true
+}
+
 func ExampleErrWrongScValType_Error() {
 	err := &ErrWrongScValType{
 		Want: xdr.ScValTypeScvU32,
