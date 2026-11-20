@@ -292,15 +292,22 @@ func TestVerifyProof_RejectsWrongLeafOrProof(t *testing.T) {
 		t.Fatalf("BuildTree returned unexpected error: %v", err)
 	}
 
-	if VerifyProof(tree.Root, [32]byte{99}, tree.Proofs[0]) {
-		t.Error("VerifyProof accepted a proof for the wrong leaf")
+	tests := []struct {
+		name string
+		root [32]byte
+		leaf [32]byte
+		prf  Proof
+	}{
+		{"wrong leaf", tree.Root, [32]byte{99}, tree.Proofs[0]},
+		{"wrong proof", tree.Root, leaves[0], tree.Proofs[1]},
+		{"wrong root", [32]byte{}, leaves[0], tree.Proofs[0]},
 	}
-	if VerifyProof(tree.Root, leaves[0], tree.Proofs[1]) {
-		t.Error("VerifyProof accepted the wrong leaf's proof")
-	}
-	var wrongRoot [32]byte
-	if VerifyProof(wrongRoot, leaves[0], tree.Proofs[0]) {
-		t.Error("VerifyProof accepted a mismatched root")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if VerifyProof(tt.root, tt.leaf, tt.prf) {
+				t.Errorf("VerifyProof accepted an invalid combination (%s)", tt.name)
+			}
+		})
 	}
 }
 

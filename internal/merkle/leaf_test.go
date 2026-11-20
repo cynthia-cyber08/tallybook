@@ -174,20 +174,38 @@ func TestLeaf_RejectsOutOfRangeAmount(t *testing.T) {
 	tooLarge := new(big.Int).Add(i128Max, big.NewInt(1))
 	tooSmall := new(big.Int).Sub(i128Min, big.NewInt(1))
 
-	for _, amount := range []*big.Int{tooLarge, tooSmall} {
-		r := Record{Amount: amount, Consumer: testConsumer}
-		if _, err := Leaf(r); err == nil {
-			t.Errorf("Leaf accepted out-of-range amount %s", amount)
-		}
+	tests := []struct {
+		name   string
+		amount *big.Int
+	}{
+		{"too large", tooLarge},
+		{"too small", tooSmall},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := Record{Amount: tt.amount, Consumer: testConsumer}
+			if _, err := Leaf(r); err == nil {
+				t.Errorf("Leaf accepted out-of-range amount %s", tt.amount)
+			}
+		})
 	}
 }
 
 func TestLeaf_AcceptsI128Boundaries(t *testing.T) {
-	for _, amount := range []*big.Int{i128Min, i128Max} {
-		r := Record{Amount: amount, Consumer: testConsumer}
-		if _, err := Leaf(r); err != nil {
-			t.Errorf("Leaf rejected boundary amount %s: %v", amount, err)
-		}
+	tests := []struct {
+		name   string
+		amount *big.Int
+	}{
+		{"i128 min", i128Min},
+		{"i128 max", i128Max},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := Record{Amount: tt.amount, Consumer: testConsumer}
+			if _, err := Leaf(r); err != nil {
+				t.Errorf("Leaf rejected boundary amount %s: %v", tt.amount, err)
+			}
+		})
 	}
 }
 
