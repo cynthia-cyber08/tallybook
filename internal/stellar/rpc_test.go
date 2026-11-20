@@ -126,6 +126,46 @@ func ExampleGetLatestLedgerResult() {
 	// closed at: 2026-09-10T22:35:32Z
 }
 
+// ExampleGetLedgerEntriesResult shows a GetLedgerEntriesResult as
+// GetLedgerEntries fills it in: the caller supplies only the keys, and the
+// RPC node supplies every field of the result. A key with no live entry is
+// simply absent from Entries rather than an error, so the zero value's empty
+// Entries reads the same as "not found" (fetchSequenceNumber in invoke.go
+// relies on exactly that); a caller matches entries by Key rather than by
+// position. LatestLedger is the ledger the node answered at, which is what a
+// LiveUntilLedgerSeq is measured against.
+func ExampleGetLedgerEntriesResult() {
+	var zero GetLedgerEntriesResult
+	fmt.Println("zero value: entries =", len(zero.Entries), "latestLedger =", zero.LatestLedger)
+
+	// Replays the recorded testnet getLedgerEntries response for contract
+	// CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC's instance
+	// key (testdata/stellar/get_ledger_entries.json).
+	client, stop := exampleFixtureClient("get_ledger_entries")
+	defer stop()
+
+	const instanceKey = "AAAABgAAAAHXkotywnA8z+r365/0701QSlWouXn8m0UOoshCtNHOYQAAABQAAAAB"
+	result, err := client.GetLedgerEntries(context.Background(), []string{instanceKey})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("entries:", len(result.Entries))
+	fmt.Println("latestLedger:", result.LatestLedger)
+
+	for _, entry := range result.Entries {
+		if entry.Key != instanceKey {
+			continue
+		}
+		fmt.Println("ledgers until archival:", entry.LiveUntilLedgerSeq-result.LatestLedger)
+	}
+
+	// Output:
+	// zero value: entries = 0 latestLedger = 0
+	// entries: 1
+	// latestLedger: 4611230
+	// ledgers until archival: 2950337
+}
+
 func TestClient_GetLatestLedger(t *testing.T) {
 	srv, lastRequest := fixtureServer(t, "get_latest_ledger")
 	c := NewClient(srv.URL, nil)
