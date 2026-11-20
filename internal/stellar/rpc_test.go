@@ -5,12 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
 )
 
 // fixtureServer returns an httptest.Server that replays the recorded
@@ -69,6 +72,58 @@ func ExampleRPCError_Error() {
 	fmt.Println(err.Error())
 	// Output:
 	// soroban rpc: code -32602: invalid_xdr
+}
+
+// exampleFixtureClient returns a Client pointed at a loopback httptest.Server
+// that replays the recorded response in testdata/stellar/<name>.json, so an
+// example runs offline against a real testnet response rather than a
+// hand-invented one. The returned func stops the server.
+func exampleFixtureClient(name string) (*Client, func()) {
+	body, err := os.ReadFile(filepath.Join("..", "..", "testdata", "stellar", name+".json"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}))
+	return NewClient(srv.URL, nil), srv.Close
+}
+
+// ExampleGetLatestLedgerResult shows that a caller never fills in a
+// GetLatestLedgerResult itself: it has no request-side fields, and every
+// field is set by GetLatestLedger from the RPC node's response. The zero
+// value's Sequence of 0 is not a ledger, so a caller only trusts a result
+// that came back with a nil error. Sequence is what the collector and
+// settler read as "the current ledger"; CloseTime is a unix timestamp in
+// seconds, carried as a string.
+func ExampleGetLatestLedgerResult() {
+	var zero GetLatestLedgerResult
+	fmt.Printf("zero value: sequence=%d closeTime=%q\n", zero.Sequence, zero.CloseTime)
+
+	// Replays the recorded testnet getLatestLedger response
+	// (testdata/stellar/get_latest_ledger.json).
+	client, stop := exampleFixtureClient("get_latest_ledger")
+	defer stop()
+
+	latest, err := client.GetLatestLedger(context.Background())
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("sequence:", latest.Sequence)
+	fmt.Println("protocol:", latest.ProtocolVersion)
+
+	closeUnix, err := strconv.ParseInt(latest.CloseTime, 10, 64)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("closed at:", time.Unix(closeUnix, 0).UTC().Format(time.RFC3339))
+
+	// Output:
+	// zero value: sequence=0 closeTime=""
+	// sequence: 4611229
+	// protocol: 28
+	// closed at: 2026-09-10T22:35:32Z
 }
 
 func TestClient_GetLatestLedger(t *testing.T) {
