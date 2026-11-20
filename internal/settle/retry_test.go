@@ -45,6 +45,17 @@ func (s *fakeSleeper) Sleep(_ context.Context, d time.Duration) error {
 	return nil
 }
 
+func ExampleIsPermanent() {
+	// ErrTransactionFailed means the chain itself rejected the settlement;
+	// retrying the same call cannot change that outcome.
+	fmt.Println(IsPermanent(&stellar.ErrTransactionFailed{Hash: "abc"}))
+	// A network error is transient; SubmitWithRetry will back off and retry.
+	fmt.Println(IsPermanent(errors.New("connection reset by peer")))
+	// Output:
+	// true
+	// false
+}
+
 func TestIsPermanent(t *testing.T) {
 	tests := []struct {
 		name string
