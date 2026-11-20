@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 // TestBuildCommitment_MatchesIndependentDerivation checks BuildCommitment's
@@ -277,4 +278,29 @@ func simulateResultServer(t *testing.T, resultXDR string) *httptest.Server {
 	}))
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+// ExampleChannel_Balance demonstrates how to query the current token balance
+// of a payment channel.
+//
+// There is deliberately no // Output: comment. Balance requires a live Soroban
+// RPC endpoint to simulate the read call on chain. Without an Output comment,
+// go test compiles this example to protect against signature drift without
+// executing it or opening a live network connection.
+func ExampleChannel_Balance() {
+	const (
+		contractID        = "CB2IEP4SQ2GC5747HFHNMXEYWEULC5Z5TTTLET2QA4CAA5SYCWAXFKAW"
+		networkPassphrase = "Test SDF Network ; September 2015"
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	channel := NewChannel(NewClient("https://soroban-testnet.stellar.org", nil), contractID, networkPassphrase)
+	balance, err := channel.Balance(ctx)
+	if err != nil {
+		fmt.Println("balance:", err)
+		return
+	}
+	fmt.Println("channel balance:", balance)
 }
