@@ -1,6 +1,7 @@
 package settle
 
 import (
+	"fmt"
 	"math/big"
 	"testing"
 	"time"
@@ -280,4 +281,39 @@ func TestDecide_ClosedOrRefundedChannelDoesNotTriggerOnStatusAlone(t *testing.T)
 			t.Errorf("status %q: ShouldSettle = true, want false (only \"closing\" triggers on status alone)", status)
 		}
 	}
+}
+
+func ExampleDecide() {
+	policy := Policy{
+		SafetyMarginLedgers: 1440,
+		MaxExposure:         big.NewInt(10_000_000),
+		MaxExposureAge:      24 * time.Hour,
+	}
+
+	// Deadline is far away, unsettled exposure is below MaxExposure, but
+	// the oldest commitment is 25 h old — age threshold fires.
+	deadline := uint32(1_000_000)
+	now := time.Date(2024, 1, 15, 12, 0, 0, 0, time.UTC)
+	oldest := now.Add(-25 * time.Hour)
+
+	state := ChannelState{
+		Address:              "GABC1234",
+		Status:               "open",
+		RefundDeadlineLedger: &deadline,
+		Exposure: &Exposure{
+			HighestVerified:      big.NewInt(500_000),
+			LastSettledAmount:    big.NewInt(0),
+			Unsettled:            big.NewInt(500_000),
+			OldestUnsettledSince: &oldest,
+		},
+	}
+
+	d := Decide(policy, state, 50_000, now)
+	fmt.Println(d.ShouldSettle)
+	fmt.Println(d.Trigger)
+	fmt.Println(d.Amount)
+	// Output:
+	// true
+	// age_threshold
+	// 500000
 }
