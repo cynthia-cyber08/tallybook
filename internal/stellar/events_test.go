@@ -40,6 +40,23 @@ func loadEventFixture(t testing.TB, name string) []rawEvent {
 	return doc.Result.Events
 }
 
+func ExampleDecodePriceBookPublishEvent() {
+	// A genuine ("price_book", "publish") event's Value, captured live
+	// from testnet (tx f3228c2dc7597914, fixture events_pricebook_publish).
+	const publishValueB64 = "AAAAEAAAAAEAAAAEAAAAEgAAAAAAAAAAaSue9e7ifQ7u45Obpx8FFiCUrvDOYAF+ur/wm7XTZE0AAAADAAAAAQAAAA0AAAAgGj9XZu1r/5QDu00mLYMf1MIGS8sVIkTZkWu5E6NGEuAAAAADAEZgRQ=="
+	ev, err := DecodePriceBookPublishEvent(publishValueB64)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("operator:", ev.Operator)
+	fmt.Println("version:", ev.Version)
+	fmt.Println("effective_ledger:", ev.EffectiveLedger)
+	// Output:
+	// operator: GBUSXHXV53RH2DXO4OJZXJY7AULCBFFO6DHGAAL6XK77BG5V2NSE253A
+	// version: 1
+	// effective_ledger: 4612165
+}
+
 func TestMatchesTopic(t *testing.T) {
 	events := loadEventFixture(t, "events_pricebook_publish")
 	ok, err := MatchesTopic(events[0].Topic, TopicPriceBook, TopicPublish)
