@@ -2,6 +2,7 @@ package stellar
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +15,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stellar/go-stellar-sdk/xdr"
 )
 
 // fixtureServer returns an httptest.Server that replays the recorded
@@ -164,6 +167,45 @@ func ExampleGetLedgerEntriesResult() {
 	// entries: 1
 	// latestLedger: 4611230
 	// ledgers until archival: 2950337
+}
+
+// ExampleLedgerEntryChange reads the StateChanges of a real simulation:
+// the recorded testnet simulateTransaction response for a price_book
+// publish call (testdata/stellar/pricebook_publish_02_simulate.json),
+// decoded with the same JSON tags SimulateTransaction uses. A caller never
+// builds a LedgerEntryChange; the RPC node reports one per ledger entry the
+// invocation would write. Before is nil for an entry the call creates and
+// After is nil for one it deletes, which is why both are pointers: the zero
+// value, with an empty Type and two nil pointers, is not a change at all.
+// Key is a base64 LedgerKey; Before and After are base64 LedgerEntry XDR.
+func ExampleLedgerEntryChange() {
+	var zero LedgerEntryChange
+	fmt.Printf("zero value: type=%q before=%t after=%t\n", zero.Type, zero.Before != nil, zero.After != nil)
+
+	raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "stellar", "pricebook_publish_02_simulate.json"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	var resp struct {
+		Result SimulateTransactionResult `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		log.Fatal(err)
+	}
+
+	for _, change := range resp.Result.StateChanges {
+		var key xdr.LedgerKey
+		if err := xdr.SafeUnmarshalBase64(change.Key, &key); err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("%s %s: before=%t after=%t\n", change.Type, key.Type, change.Before != nil, change.After != nil)
+	}
+
+	// Output:
+	// zero value: type="" before=false after=false
+	// updated LedgerEntryTypeContractData: before=true after=true
+	// updated LedgerEntryTypeContractData: before=true after=true
+	// created LedgerEntryTypeContractData: before=false after=true
 }
 
 func TestClient_GetLatestLedger(t *testing.T) {
