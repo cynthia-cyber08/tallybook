@@ -11,6 +11,8 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/stellar/go-stellar-sdk/keypair"
 )
 
 // TestBuildCommitment_MatchesIndependentDerivation checks BuildCommitment's
@@ -303,4 +305,40 @@ func ExampleChannel_Balance() {
 		return
 	}
 	fmt.Println("channel balance:", balance)
+}
+
+// ExampleChannel_Close shows the call shape of Channel.Close: authorized by
+// the recipient, it closes the channel using a signed cumulative commitment,
+// withdrawing the unsettled difference to the recipient and attempting to
+// refund the funder.
+//
+// There is deliberately no // Output: comment. Close submits a transaction
+// to a live Soroban RPC endpoint and requires an active channel, a funded
+// recipient signer, and a valid funder signature. Without an Output comment,
+// go test compiles this example to protect against signature drift without
+// executing it or opening a live network connection.
+func ExampleChannel_Close() {
+	const (
+		contractID        = "CB2IEP4SQ2GC5747HFHNMXEYWEULC5Z5TTTLET2QA4CAA5SYCWAXFKAW"
+		networkPassphrase = "Test SDF Network ; September 2015"
+	)
+	recipient, err := keypair.FromRawSeed([32]byte{1})
+	if err != nil {
+		fmt.Println("recipient key:", err)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	channel := NewChannel(NewClient("https://soroban-testnet.stellar.org", nil), contractID, networkPassphrase)
+	amount := big.NewInt(10_000)
+	var sig [64]byte
+
+	hash, err := channel.Close(ctx, recipient, amount, sig)
+	if err != nil {
+		fmt.Println("close:", err)
+		return
+	}
+	fmt.Println("close submitted:", hash)
 }
