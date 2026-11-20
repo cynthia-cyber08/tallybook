@@ -1,0 +1,32 @@
+root = true
+
+[*]
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+charset = utf-8
+
+# gofmt uses tabs; setting spaces here would fight the formatter CI enforces.
+[*.go]
+indent_style = tab
+indent_size = tab
+
+# Match current indentation in internal/store/migrations (4-space indent,
+# verified against 0001_periods.sql before choosing this value). Do not
+# reformat applied migrations; this setting is for new files only.
+[*.sql]
+indent_style = space
+indent_size = 4
+
+[*.yml]
+indent_style = space
+indent_size = 2
+
+[*.yaml]
+indent_style = space
+indent_size = 2
+
+[*.md]
+indent_style = space
+indent_size = 2
+trim_trailing_whitespace = false

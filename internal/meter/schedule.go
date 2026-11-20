@@ -81,7 +81,7 @@ type scheduleRule struct {
 func ParseSchedule(raw []byte) (*Schedule, error) {
 	var doc scheduleDocument
 	if err := json.Unmarshal(raw, &doc); err != nil {
-		return nil, fmt.Errorf("meter: parse schedule JSON with no usable rules: %w: %v", ErrEmptySchedule, err)
+		return nil, fmt.Errorf("meter: parse schedule JSON with no usable rules: %w: %w", ErrEmptySchedule, err)
 	}
 	if len(doc.Rules) == 0 {
 		return nil, ErrEmptySchedule

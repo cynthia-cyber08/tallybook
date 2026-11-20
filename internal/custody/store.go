@@ -130,7 +130,7 @@ func (s *Store) Submit(ctx context.Context, channel ChannelReader, sc SubmittedC
 	// the key itself is the right one.
 	valid, err := VerifyCommitment(ctx, channel, sc.TrustedSignerKey, sc.CumulativeAmount, sc.Signature)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrVerificationIncomplete, err)
+		return nil, fmt.Errorf("%w: %w", ErrVerificationIncomplete, err)
 	}
 
 	amount := pgtype.Numeric{Int: new(big.Int).Set(sc.CumulativeAmount), Exp: 0, Valid: true}

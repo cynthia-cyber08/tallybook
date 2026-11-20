@@ -94,6 +94,15 @@ jobs:
           go install honnef.co/go/tools/cmd/staticcheck@2026.2.2
           staticcheck ./...
 
+      # golangci-lint runs errorlint only (bodyclose found 0 findings on this
+      # codebase). staticcheck is not duplicated here; it has its own step above.
+      # Pinned to match the version evaluated against this tree; bump .golangci.yml
+      # and this line together.
+      - name: golangci-lint
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b $(go env GOPATH)/bin v2.15.0
+          golangci-lint run ./...
+
       # govulncheck gates the build: it is clean as of the toolchain and
       # golang.org/x/text bumps in this commit, so any new finding is a real
       # regression worth stopping for.

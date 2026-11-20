@@ -177,7 +177,7 @@ func SubmitWithRetry(ctx context.Context, s *Submitter, channel ChannelSettler, 
 
 		if IsPermanent(sendErr) {
 			if markErr := s.markFailed(ctx, rec.ID, hash, sendErr.Error()); markErr != nil {
-				return nil, fmt.Errorf("settle: submit with retry %s %s: send failed (%v) and marking it failed also failed: %w",
+				return nil, fmt.Errorf("settle: submit with retry %s %s: send failed (%w) and marking it failed also failed: %w",
 					channelAddress, amount, sendErr, markErr)
 			}
 			rec.Status = "failed"
