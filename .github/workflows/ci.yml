@@ -138,6 +138,7 @@ jobs:
           go test ./internal/stellar -run='^$' -fuzz=FuzzDecodeScValHelpers -fuzztime=2s
           go test ./internal/meter -run='^$' -fuzz=FuzzParseSchedule -fuzztime=2s
           go test ./internal/merkle -run='^$' -fuzz=FuzzBuildTreeProofAgreement -fuzztime=2s
+          go test ./internal/store -run='^$' -fuzz=FuzzParseMigrations -fuzztime=2s
 
       - name: go test
         run: make test-ci
