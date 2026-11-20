@@ -40,6 +40,23 @@ func loadEventFixture(t testing.TB, name string) []rawEvent {
 	return doc.Result.Events
 }
 
+func ExampleDecodePriceBookPublishEvent() {
+	// A genuine ("price_book", "publish") event's Value, captured live
+	// from testnet (tx f3228c2dc7597914, fixture events_pricebook_publish).
+	const publishValueB64 = "AAAAEAAAAAEAAAAEAAAAEgAAAAAAAAAAaSue9e7ifQ7u45Obpx8FFiCUrvDOYAF+ur/wm7XTZE0AAAADAAAAAQAAAA0AAAAgGj9XZu1r/5QDu00mLYMf1MIGS8sVIkTZkWu5E6NGEuAAAAADAEZgRQ=="
+	ev, err := DecodePriceBookPublishEvent(publishValueB64)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("operator:", ev.Operator)
+	fmt.Println("version:", ev.Version)
+	fmt.Println("effective_ledger:", ev.EffectiveLedger)
+	// Output:
+	// operator: GBUSXHXV53RH2DXO4OJZXJY7AULCBFFO6DHGAAL6XK77BG5V2NSE253A
+	// version: 1
+	// effective_ledger: 4612165
+}
+
 func TestMatchesTopic(t *testing.T) {
 	events := loadEventFixture(t, "events_pricebook_publish")
 	ok, err := MatchesTopic(events[0].Topic, TopicPriceBook, TopicPublish)
@@ -336,6 +353,20 @@ func TestDecodeChannelOpenEvent_RoundTrip(t *testing.T) {
 	}
 }
 
+func ExampleDecodeChannelCloseEvent() {
+	valueB64, err := MarshalScValBase64(ScvVec([]xdr.ScVal{ScvU32(4700123)}))
+	if err != nil {
+		log.Fatal(err)
+	}
+	ev, err := DecodeChannelCloseEvent(valueB64)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(ev.EffectiveAtLedger)
+	// Output:
+	// 4700123
+}
+
 func TestDecodeChannelCloseEvent_RoundTrip(t *testing.T) {
 	valueB64, err := MarshalScValBase64(ScvVec([]xdr.ScVal{ScvU32(4700123)}))
 	if err != nil {
@@ -407,6 +438,33 @@ func TestDecodeChannelWithdrawEvent_LiveEvent(t *testing.T) {
 	}
 }
 
+func ExampleDecodeChannelWithdrawEvent() {
+	// A two-field Withdraw event (to, amount) built with the XDR helpers.
+	to := "GCWV2YQTXWP72QTU5YX5FM237RCHY6REV6BL6TKBEFCQ5R2QCTX67VUG"
+	toVal, err := ScvAddress(to)
+	if err != nil {
+		panic(err)
+	}
+	amountVal, err := ScvI128(big.NewInt(5_000_000))
+	if err != nil {
+		panic(err)
+	}
+	valueB64, err := MarshalScValBase64(ScvVec([]xdr.ScVal{toVal, amountVal}))
+	if err != nil {
+		panic(err)
+	}
+
+	ev, err := DecodeChannelWithdrawEvent(valueB64)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("to:", ev.To)
+	fmt.Println("amount:", ev.Amount)
+	// Output:
+	// to: GCWV2YQTXWP72QTU5YX5FM237RCHY6REV6BL6TKBEFCQ5R2QCTX67VUG
+	// amount: 5000000
+}
+
 func TestDecodeChannelRefundEvent_RoundTrip(t *testing.T) {
 	from := "GAAACAQDAQCQMBYIBEFAWDANBYHRAEISCMKBKFQXDAMRUGY4DUPB7JZX"
 	fromVal, err := ScvAddress(from)
@@ -432,6 +490,45 @@ func TestDecodeChannelRefundEvent_RoundTrip(t *testing.T) {
 	if ev.Amount.Cmp(big.NewInt(9999)) != 0 {
 		t.Errorf("Amount = %s, want 9999", ev.Amount)
 	}
+}
+
+func ExampleDecodeChannelOpenEvent() {
+	// A synthetically constructed one-way-channel Open event: from,
+	// commitment_key, to, token, amount, refund_waiting_period — in the
+	// field order event.rs declares.
+	const openValueB64 = "AAAAEAAAAAEAAAAGAAAAEgAAAAAAAAAAAAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8AAAANAAAAIAABAgMEBQYHCAkKCwwNDg8QERITFBUWFxgZGhscHR4fAAAAEgAAAAAAAAAArV1iE72f/UJ07i/Ss1v8RHx6JK+Cv01BIUUOx1AU7+8AAAASAAAAAdeSi3LCcDzP6vfrn/TvTVBKVai5efybRQ6iyEK00c5hAAAACgAAAAAAAAAAAAAAAAAAAfQAAAADAAAAFA=="
+	ev, err := DecodeChannelOpenEvent(openValueB64)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("from:", ev.From)
+	fmt.Printf("commitment_key: %x\n", ev.CommitmentKey)
+	fmt.Println("to:", ev.To)
+	fmt.Println("token:", ev.Token)
+	fmt.Println("amount:", ev.Amount)
+	fmt.Println("refund_waiting_period:", ev.RefundWaitingPeriod)
+	// Output:
+	// from: GAAACAQDAQCQMBYIBEFAWDANBYHRAEISCMKBKFQXDAMRUGY4DUPB7JZX
+	// commitment_key: 000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f
+	// to: GCWV2YQTXWP72QTU5YX5FM237RCHY6REV6BL6TKBEFCQ5R2QCTX67VUG
+	// token: CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC
+	// amount: 500
+	// refund_waiting_period: 20
+}
+
+func ExampleDecodeChannelRefundEvent() {
+	// A synthetically constructed one-way-channel Refund event: from and
+	// the entire remaining balance returned to the payer (§1).
+	const refundValueB64 = "AAAAEAAAAAEAAAACAAAAEgAAAAAAAAAAAAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8AAAAKAAAAAAAAAAAAAAAAAAAnDw=="
+	ev, err := DecodeChannelRefundEvent(refundValueB64)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("from:", ev.From)
+	fmt.Println("amount:", ev.Amount)
+	// Output:
+	// from: GAAACAQDAQCQMBYIBEFAWDANBYHRAEISCMKBKFQXDAMRUGY4DUPB7JZX
+	// amount: 9999
 }
 
 func TestDecodeEventFields_RejectsWrongLength(t *testing.T) {

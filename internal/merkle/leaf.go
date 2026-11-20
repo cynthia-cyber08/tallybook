@@ -25,7 +25,7 @@ var (
 // map keys (§4); this is the only place that formula is implemented.
 type Record struct {
 	Amount       *big.Int // charged amount, i128 range (integer stroops)
-	Consumer     string   // G... strkey account address
+	Consumer     string   // G... account or C... contract strkey address
 	EndpointHash [32]byte // sha256(method || " " || path_template); see EndpointHash
 	Ledger       uint32   // settlement or observation ledger
 	PriceVersion uint32
@@ -139,25 +139,52 @@ func scvI128(v *big.Int) (xdr.ScVal, error) {
 	return xdr.ScVal{Type: xdr.ScValTypeScvI128, I128: &parts}, nil
 }
 
-// scvAddress converts a G... strkey account address to ScVal::Address.
+// scvAddress converts a G... account or C... contract strkey address to
+// ScVal::Address. The wire format differs by type:
+//   - account: ScAddressType=0, then PublicKeyType=0, then 32-byte ed25519 key (36 bytes)
+//   - contract: ScAddressType=1, then 32-byte contract id — no inner type word (32 bytes)
+//
+// A contract-consumer record is 4 bytes shorter than the account equivalent.
 func scvAddress(address string) (xdr.ScVal, error) {
-	raw, err := strkey.Decode(strkey.VersionByteAccountID, address)
-	if err != nil {
-		return xdr.ScVal{}, fmt.Errorf("decode strkey address %q: %w", address, err)
+	if len(address) == 0 {
+		return xdr.ScVal{}, fmt.Errorf("consumer: empty address")
 	}
-	if len(raw) != 32 {
-		return xdr.ScVal{}, fmt.Errorf("decoded address %q is %d bytes, want 32", address, len(raw))
+	switch address[0] {
+	case 'G':
+		raw, err := strkey.Decode(strkey.VersionByteAccountID, address)
+		if err != nil {
+			return xdr.ScVal{}, fmt.Errorf("decode strkey address %q: %w", address, err)
+		}
+		if len(raw) != 32 {
+			return xdr.ScVal{}, fmt.Errorf("decoded address %q is %d bytes, want 32", address, len(raw))
+		}
+		var raw32 xdr.Uint256
+		copy(raw32[:], raw)
+		accountID := xdr.AccountId(xdr.PublicKey{
+			Type:    xdr.PublicKeyTypePublicKeyTypeEd25519,
+			Ed25519: &raw32,
+		})
+		scAddr := xdr.ScAddress{
+			Type:      xdr.ScAddressTypeScAddressTypeAccount,
+			AccountId: &accountID,
+		}
+		return xdr.ScVal{Type: xdr.ScValTypeScvAddress, Address: &scAddr}, nil
+	case 'C':
+		raw, err := strkey.Decode(strkey.VersionByteContract, address)
+		if err != nil {
+			return xdr.ScVal{}, fmt.Errorf("decode strkey address %q: %w", address, err)
+		}
+		if len(raw) != 32 {
+			return xdr.ScVal{}, fmt.Errorf("decoded address %q is %d bytes, want 32", address, len(raw))
+		}
+		var contractID xdr.ContractId
+		copy(contractID[:], raw)
+		scAddr := xdr.ScAddress{
+			Type:       xdr.ScAddressTypeScAddressTypeContract,
+			ContractId: &contractID,
+		}
+		return xdr.ScVal{Type: xdr.ScValTypeScvAddress, Address: &scAddr}, nil
+	default:
+		return xdr.ScVal{}, fmt.Errorf("address %q: unrecognized strkey prefix, want G... account or C... contract", address)
 	}
-	var raw32 xdr.Uint256
-	copy(raw32[:], raw)
-
-	accountID := xdr.AccountId(xdr.PublicKey{
-		Type:    xdr.PublicKeyTypePublicKeyTypeEd25519,
-		Ed25519: &raw32,
-	})
-	scAddr := xdr.ScAddress{
-		Type:      xdr.ScAddressTypeScAddressTypeAccount,
-		AccountId: &accountID,
-	}
-	return xdr.ScVal{Type: xdr.ScValTypeScvAddress, Address: &scAddr}, nil
 }
