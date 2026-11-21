@@ -399,3 +399,116 @@ func ExampleChannel_Deposited() {
 	}
 	fmt.Println("total deposited:", deposited)
 }
+
+// ExampleChannel_From demonstrates how to query the funder's address of a
+// payment channel.
+//
+// There is deliberately no // Output: comment. From requires a live Soroban
+// RPC endpoint to simulate the read call on chain. Without an Output comment,
+// go test compiles this example to protect against signature drift without
+// executing it or opening a live network connection.
+func ExampleChannel_From() {
+	const (
+		contractID        = "CB2IEP4SQ2GC5747HFHNMXEYWEULC5Z5TTTLET2QA4CAA5SYCWAXFKAW"
+		networkPassphrase = "Test SDF Network ; September 2015"
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	channel := NewChannel(NewClient("https://soroban-testnet.stellar.org", nil), contractID, networkPassphrase)
+	from, err := channel.From(ctx)
+	if err != nil {
+		fmt.Println("from:", err)
+		return
+	}
+	fmt.Println("channel funder:", from)
+}
+
+// ExampleChannel_RefundWaitingPeriod demonstrates how to query the number of
+// ledgers the funder must wait after close_start before calling refund.
+//
+// There is deliberately no // Output: comment. RefundWaitingPeriod requires a
+// live Soroban RPC endpoint to simulate the read call on chain. Without an
+// Output comment, go test compiles this example to protect against signature
+// drift without executing it or opening a live network connection.
+func ExampleChannel_RefundWaitingPeriod() {
+	const (
+		contractID        = "CB2IEP4SQ2GC5747HFHNMXEYWEULC5Z5TTTLET2QA4CAA5SYCWAXFKAW"
+		networkPassphrase = "Test SDF Network ; September 2015"
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	channel := NewChannel(NewClient("https://soroban-testnet.stellar.org", nil), contractID, networkPassphrase)
+	period, err := channel.RefundWaitingPeriod(ctx)
+	if err != nil {
+		fmt.Println("refund_waiting_period:", err)
+		return
+	}
+	fmt.Println("refund waiting period (ledgers):", period)
+}
+
+// ExampleChannel_PrepareCommitment demonstrates how to obtain the exact bytes
+// the funder must sign to authorize a cumulative settlement amount. The
+// returned bytes are what the funder signs with ed25519 using the channel's
+// commitment_key; the recipient then presents the signature when calling
+// Settle or Close.
+//
+// There is deliberately no // Output: comment. PrepareCommitment requires a
+// live Soroban RPC endpoint to simulate the call on chain. Without an Output
+// comment, go test compiles this example to protect against signature drift
+// without executing it or opening a live network connection.
+func ExampleChannel_PrepareCommitment() {
+	const (
+		contractID        = "CB2IEP4SQ2GC5747HFHNMXEYWEULC5Z5TTTLET2QA4CAA5SYCWAXFKAW"
+		networkPassphrase = "Test SDF Network ; September 2015"
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	channel := NewChannel(NewClient("https://soroban-testnet.stellar.org", nil), contractID, networkPassphrase)
+	amount := big.NewInt(10_000)
+	commitment, err := channel.PrepareCommitment(ctx, amount)
+	if err != nil {
+		fmt.Println("prepare_commitment:", err)
+		return
+	}
+	fmt.Println("commitment bytes to sign:", len(commitment))
+}
+
+// ExampleChannel_Refund demonstrates how to return the channel's entire
+// remaining balance to the funder once the close is effective (after
+// RefundWaitingPeriod ledgers). This is authorized by the funder and makes
+// every unsettled commitment worthless — the contract reserves nothing for
+// the recipient.
+//
+// There is deliberately no // Output: comment. Refund submits a transaction
+// to a live Soroban RPC endpoint and requires an active channel, a funded
+// funder signer, and that the close is effective. Without an Output comment,
+// go test compiles this example to protect against signature drift without
+// executing it or opening a live network connection.
+func ExampleChannel_Refund() {
+	const (
+		contractID        = "CB2IEP4SQ2GC5747HFHNMXEYWEULC5Z5TTTLET2QA4CAA5SYCWAXFKAW"
+		networkPassphrase = "Test SDF Network ; September 2015"
+	)
+	funder, err := keypair.FromRawSeed([32]byte{1})
+	if err != nil {
+		fmt.Println("funder key:", err)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	channel := NewChannel(NewClient("https://soroban-testnet.stellar.org", nil), contractID, networkPassphrase)
+	hash, err := channel.Refund(ctx, funder)
+	if err != nil {
+		fmt.Println("refund:", err)
+		return
+	}
+	fmt.Println("refund submitted:", hash)
+}
