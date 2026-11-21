@@ -17,39 +17,49 @@ func mustSchedule(t *testing.T, raw string) *Schedule {
 	return sched
 }
 
-func TestNewCatalog_RejectsEmpty(t *testing.T) {
-	_, err := NewCatalog()
-	if !errors.Is(err, ErrEmptyCatalog) {
-		t.Fatalf("NewCatalog() error = %v, want ErrEmptyCatalog", err)
-	}
-}
-
-func TestNewCatalog_RejectsNilSchedule(t *testing.T) {
-	_, err := NewCatalog(CatalogVersion{Version: 1, EffectiveLedger: 100, Schedule: nil})
-	if !errors.Is(err, ErrNilSchedule) {
-		t.Fatalf("NewCatalog() error = %v, want ErrNilSchedule", err)
-	}
-}
-
-func TestNewCatalog_RejectsDuplicateVersion(t *testing.T) {
+func TestNewCatalog_Rejects(t *testing.T) {
 	sched := mustSchedule(t, `{"rules":[{"method":"GET","path_template":"/v1/x","unit_price":"1"}]}`)
-	_, err := NewCatalog(
-		CatalogVersion{Version: 1, EffectiveLedger: 100, Schedule: sched},
-		CatalogVersion{Version: 1, EffectiveLedger: 200, Schedule: sched},
-	)
-	if !errors.Is(err, ErrDuplicateVersion) {
-		t.Fatalf("NewCatalog() error = %v, want ErrDuplicateVersion", err)
-	}
-}
 
-func TestNewCatalog_RejectsDuplicateEffectiveLedger(t *testing.T) {
-	sched := mustSchedule(t, `{"rules":[{"method":"GET","path_template":"/v1/x","unit_price":"1"}]}`)
-	_, err := NewCatalog(
-		CatalogVersion{Version: 1, EffectiveLedger: 100, Schedule: sched},
-		CatalogVersion{Version: 2, EffectiveLedger: 100, Schedule: sched},
-	)
-	if !errors.Is(err, ErrDuplicateVersion) {
-		t.Fatalf("NewCatalog() error = %v, want ErrDuplicateVersion", err)
+	tests := []struct {
+		name     string
+		versions []CatalogVersion
+		wantErr  error
+	}{
+		{
+			name:     "empty",
+			versions: nil,
+			wantErr:  ErrEmptyCatalog,
+		},
+		{
+			name:     "nil schedule",
+			versions: []CatalogVersion{{Version: 1, EffectiveLedger: 100, Schedule: nil}},
+			wantErr:  ErrNilSchedule,
+		},
+		{
+			name: "duplicate version number",
+			versions: []CatalogVersion{
+				{Version: 1, EffectiveLedger: 100, Schedule: sched},
+				{Version: 1, EffectiveLedger: 200, Schedule: sched},
+			},
+			wantErr: ErrDuplicateVersion,
+		},
+		{
+			name: "duplicate effective ledger",
+			versions: []CatalogVersion{
+				{Version: 1, EffectiveLedger: 100, Schedule: sched},
+				{Version: 2, EffectiveLedger: 100, Schedule: sched},
+			},
+			wantErr: ErrDuplicateVersion,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := NewCatalog(tt.versions...)
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("NewCatalog() error = %v, want %v", err, tt.wantErr)
+			}
+		})
 	}
 }
 
@@ -290,49 +300,76 @@ func TestCatalog_VersionAt_BeforeEarliestReturnsErrNoVersionAt(t *testing.T) {
 	}
 }
 
-func TestPricer_Price_ComputesChargedAmount(t *testing.T) {
-	sched := mustSchedule(t, `{"rules":[{"method":"GET","path_template":"/v1/items","unit_price":"1500"}]}`)
-	catalog, err := NewCatalog(CatalogVersion{Version: 1, EffectiveLedger: 1000, Schedule: sched})
-	if err != nil {
-		t.Fatalf("NewCatalog returned unexpected error: %v", err)
-	}
-	pricer := NewPricer(catalog)
+func TestPricer_Price(t *testing.T) {
+	sched1500 := mustSchedule(t, `{"rules":[{"method":"GET","path_template":"/v1/items","unit_price":"1500"}]}`)
+	sched1 := mustSchedule(t, `{"rules":[{"method":"GET","path_template":"/v1/items","unit_price":"1"}]}`)
 
-	priced, err := pricer.Price(1000, "GET", "/v1/items", 3)
-	if err != nil {
-		t.Fatalf("Price returned unexpected error: %v", err)
+	tests := []struct {
+		name        string
+		schedule    *Schedule
+		ledger      uint32
+		method      string
+		path        string
+		units       uint64
+		wantErr     error
+		wantAmount  *big.Int
+		wantVersion uint32
+	}{
+		{
+			name:        "computes charged amount",
+			schedule:    sched1500,
+			ledger:      1000,
+			method:      "GET",
+			path:        "/v1/items",
+			units:       3,
+			wantAmount:  big.NewInt(4500),
+			wantVersion: 1,
+		},
+		{
+			name:     "unknown endpoint",
+			schedule: sched1,
+			ledger:   1000,
+			method:   "GET",
+			path:     "/v1/nope",
+			units:    1,
+			wantErr:  ErrUnknownEndpoint,
+		},
+		{
+			name:     "ledger before earliest version",
+			schedule: sched1,
+			ledger:   500,
+			method:   "GET",
+			path:     "/v1/items",
+			units:    1,
+			wantErr:  ErrNoVersionAt,
+		},
 	}
-	if priced.ChargedAmount.Cmp(big.NewInt(4500)) != 0 {
-		t.Errorf("ChargedAmount = %s, want 4500", priced.ChargedAmount)
-	}
-	if priced.PriceVersion != 1 {
-		t.Errorf("PriceVersion = %d, want 1", priced.PriceVersion)
-	}
-}
 
-func TestPricer_Price_UnknownEndpoint(t *testing.T) {
-	sched := mustSchedule(t, `{"rules":[{"method":"GET","path_template":"/v1/items","unit_price":"1"}]}`)
-	catalog, err := NewCatalog(CatalogVersion{Version: 1, EffectiveLedger: 1000, Schedule: sched})
-	if err != nil {
-		t.Fatalf("NewCatalog returned unexpected error: %v", err)
-	}
-	pricer := NewPricer(catalog)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			catalog, err := NewCatalog(CatalogVersion{Version: 1, EffectiveLedger: 1000, Schedule: tt.schedule})
+			if err != nil {
+				t.Fatalf("NewCatalog returned unexpected error: %v", err)
+			}
+			pricer := NewPricer(catalog)
 
-	if _, err := pricer.Price(1000, "GET", "/v1/nope", 1); !errors.Is(err, ErrUnknownEndpoint) {
-		t.Fatalf("Price error = %v, want ErrUnknownEndpoint", err)
-	}
-}
-
-func TestPricer_Price_NoVersionAt(t *testing.T) {
-	sched := mustSchedule(t, `{"rules":[{"method":"GET","path_template":"/v1/items","unit_price":"1"}]}`)
-	catalog, err := NewCatalog(CatalogVersion{Version: 1, EffectiveLedger: 1000, Schedule: sched})
-	if err != nil {
-		t.Fatalf("NewCatalog returned unexpected error: %v", err)
-	}
-	pricer := NewPricer(catalog)
-
-	if _, err := pricer.Price(500, "GET", "/v1/items", 1); !errors.Is(err, ErrNoVersionAt) {
-		t.Fatalf("Price error = %v, want ErrNoVersionAt", err)
+			priced, err := pricer.Price(tt.ledger, tt.method, tt.path, tt.units)
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("Price error = %v, want %v", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Price returned unexpected error: %v", err)
+			}
+			if priced.ChargedAmount.Cmp(tt.wantAmount) != 0 {
+				t.Errorf("ChargedAmount = %s, want %s", priced.ChargedAmount, tt.wantAmount)
+			}
+			if priced.PriceVersion != tt.wantVersion {
+				t.Errorf("PriceVersion = %d, want %d", priced.PriceVersion, tt.wantVersion)
+			}
+		})
 	}
 }
 
