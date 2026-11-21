@@ -123,7 +123,7 @@ func TestBuildTree_MatchesFixtures(t *testing.T) {
 
 func TestBuildTree_RejectsEmpty(t *testing.T) {
 	_, err := BuildTree(nil)
-	if err != ErrEmptyTree {
+	if !errors.Is(err, ErrEmptyTree) {
 		t.Fatalf("BuildTree(nil) error = %v, want ErrEmptyTree", err)
 	}
 }

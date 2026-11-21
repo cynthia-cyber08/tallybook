@@ -3,9 +3,12 @@ package merkle
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math/big"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -250,8 +253,9 @@ func TestLeaf_RejectsInvalidConsumerAddress(t *testing.T) {
 		address string
 	}{
 		{"empty", ""},
-		{"wrong prefix", "C" + strings.Repeat("A", 55)},
-		{"too short", "GSHORT"},
+		{"unrecognized prefix", "S" + strings.Repeat("A", 55)},
+		{"invalid C address checksum", "C" + strings.Repeat("A", 55)},
+		{"too short G address", "GSHORT"},
 		{"garbage", "not-a-strkey-address-at-all"},
 	}
 	for _, tt := range tests {
@@ -261,6 +265,141 @@ func TestLeaf_RejectsInvalidConsumerAddress(t *testing.T) {
 				t.Errorf("Leaf accepted invalid consumer address %q", tt.address)
 			}
 		})
+	}
+}
+
+func TestLeaf_AcceptsContractConsumer(t *testing.T) {
+	// A real deployed contract address (statement_registry, testnet).
+	contract := "CB75TTWGP3TLKEDGA2WOLEVCNKLUX6X5KS47GMWGBHUAVES7J55LY25M"
+	r := Record{
+		Amount:   big.NewInt(1),
+		Consumer: contract,
+	}
+	if _, err := Leaf(r); err != nil {
+		t.Errorf("Leaf rejected valid contract consumer %q: %v", contract, err)
+	}
+}
+
+// TestLeaf_CrossRepoVectors walks every vector in testdata/merkle/records.json,
+// which is committed byte-identical to tallybook-contracts' fixtures/merkle/records.json
+// generated from the contract's leaf.rs. This exercises the full encodeRecord path
+// against the contract's own output, including the session-mode C... consumer.
+func TestLeaf_CrossRepoVectors(t *testing.T) {
+	type recordVector struct {
+		Label          string `json:"label"`
+		Amount         string `json:"amount"`
+		Consumer       string `json:"consumer"`
+		Endpoint       string `json:"endpoint"`
+		EndpointMethod string `json:"endpoint_method"`
+		EndpointPath   string `json:"endpoint_path"`
+		Ledger         uint32 `json:"ledger"`
+		PriceV         uint32 `json:"price_v"`
+		RequestID      string `json:"reqid"`
+		Units          uint64 `json:"units"`
+		RecordBytes    string `json:"record_bytes"`
+		Leaf           string `json:"leaf"`
+	}
+	type vectorFile struct {
+		Records []recordVector `json:"records"`
+	}
+
+	path := filepath.Join("..", "..", "testdata", "merkle", "records.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	var vf vectorFile
+	if err := json.Unmarshal(data, &vf); err != nil {
+		t.Fatalf("parse %s: %v", path, err)
+	}
+	if len(vf.Records) == 0 {
+		t.Fatal("records.json has no vectors")
+	}
+
+	sessionVectorSeen := false
+
+	for _, v := range vf.Records {
+		v := v
+		t.Run(v.Label, func(t *testing.T) {
+			amount, ok := new(big.Int).SetString(v.Amount, 10)
+			if !ok {
+				t.Fatalf("parse amount %q", v.Amount)
+			}
+
+			// Hex-decode reqid; left-pad to 32 bytes (fixture omits leading zeros).
+			reqHex := v.RequestID
+			if len(reqHex)%2 != 0 {
+				reqHex = "0" + reqHex
+			}
+			reqRaw, err := hex.DecodeString(reqHex)
+			if err != nil {
+				t.Fatalf("decode reqid %q: %v", v.RequestID, err)
+			}
+			var reqID [32]byte
+			copy(reqID[32-len(reqRaw):], reqRaw)
+
+			// Endpoint hash from fixture's method and path.
+			gotEndpoint := EndpointHash(v.EndpointMethod, v.EndpointPath)
+			wantEndpointRaw, err := hex.DecodeString(v.Endpoint)
+			if err != nil {
+				t.Fatalf("decode endpoint hex %q: %v", v.Endpoint, err)
+			}
+			var wantEndpoint [32]byte
+			copy(wantEndpoint[:], wantEndpointRaw)
+			if gotEndpoint != wantEndpoint {
+				t.Errorf("EndpointHash(%q, %q) = %x, want %x",
+					v.EndpointMethod, v.EndpointPath, gotEndpoint, wantEndpoint)
+			}
+
+			r := Record{
+				Amount:       amount,
+				Consumer:     v.Consumer,
+				EndpointHash: gotEndpoint,
+				Ledger:       v.Ledger,
+				PriceVersion: v.PriceV,
+				RequestID:    reqID,
+				Units:        v.Units,
+			}
+
+			// Assert record_bytes.
+			wantRecordBytes, err := hex.DecodeString(v.RecordBytes)
+			if err != nil {
+				t.Fatalf("decode record_bytes hex: %v", err)
+			}
+			gotRecordBytes, err := encodeRecord(r)
+			if err != nil {
+				t.Fatalf("encodeRecord: %v", err)
+			}
+			if hex.EncodeToString(gotRecordBytes) != hex.EncodeToString(wantRecordBytes) {
+				t.Errorf("record_bytes mismatch:\n got: %s\nwant: %s",
+					hex.EncodeToString(gotRecordBytes), hex.EncodeToString(wantRecordBytes))
+			}
+
+			// Assert leaf.
+			wantLeafRaw, err := hex.DecodeString(v.Leaf)
+			if err != nil {
+				t.Fatalf("decode leaf hex: %v", err)
+			}
+			var wantLeaf [32]byte
+			copy(wantLeaf[:], wantLeafRaw)
+
+			gotLeaf, err := Leaf(r)
+			if err != nil {
+				t.Fatalf("Leaf: %v", err)
+			}
+			if gotLeaf != wantLeaf {
+				t.Errorf("leaf = %x, want %x", gotLeaf, wantLeaf)
+			}
+
+			// Track that the session vector (C... consumer) is covered.
+			if len(v.Consumer) > 0 && v.Consumer[0] == 'C' {
+				sessionVectorSeen = true
+			}
+		})
+	}
+
+	if !sessionVectorSeen {
+		t.Error("no vector with a C... contract consumer; session-mode regression cannot be detected")
 	}
 }
 

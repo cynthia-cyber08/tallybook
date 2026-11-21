@@ -3,6 +3,7 @@ package settle
 import (
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 	"testing"
 	"time"
@@ -203,3 +204,22 @@ func TestDaemon_Tick_LedgerSourceErrorPropagates(t *testing.T) {
 }
 
 func ptrInt32(v int32) *int32 { return &v }
+
+func ExampleDaemon_LastSuccessfulChainRead() {
+	d := NewDaemon(nil, nil, nil, nil, nil, nil, Policy{})
+
+	// Before any successful Tick the chain has never been read.
+	_, ok := d.LastSuccessfulChainRead()
+	fmt.Println(ok)
+
+	// Once a Tick records a successful ledger read, it returns that time and true.
+	t0 := time.Date(2024, 1, 15, 10, 0, 0, 0, time.UTC)
+	d.chainRead.recordSuccess(t0)
+	got, ok := d.LastSuccessfulChainRead()
+	fmt.Println(ok)
+	fmt.Println(got.UTC().Format(time.RFC3339))
+	// Output:
+	// false
+	// true
+	// 2024-01-15T10:00:00Z
+}

@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -44,7 +45,7 @@ func TestReadHeaderTimeoutClosesPartialRequest(t *testing.T) {
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- server.Serve(listener) }()
 	t.Cleanup(func() {
-		if err := server.Close(); err != nil && err != http.ErrServerClosed {
+		if err := server.Close(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			t.Errorf("close server: %v", err)
 		}
 		<-serveErr

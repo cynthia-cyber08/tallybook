@@ -173,7 +173,7 @@ func (s *Submitter) Submit(ctx context.Context, channel ChannelSettler, signer *
 		// this same row's lifecycle across attempts rather than settling
 		// it after just one.
 		if markErr := s.markFailed(ctx, rec.ID, hash, sendErr.Error()); markErr != nil {
-			return nil, fmt.Errorf("settle: submit %s %s: send failed (%v) and marking it failed also failed: %w",
+			return nil, fmt.Errorf("settle: submit %s %s: send failed (%w) and marking it failed also failed: %w",
 				channelAddress, amount, sendErr, markErr)
 		}
 		rec.Status = "failed"

@@ -57,6 +57,27 @@ func ExampleInvokeAndSubmitWithAuth() {
 // ExampleErrTransactionFailed_Error constructs an ErrTransactionFailed with
 // a concrete literal transaction hash and result XDR, then calls its Error()
 // method and prints the formatted string.
+func ExampleAuthorizeInvocation() {
+	const (
+		contractID        = "CB75TTWGP3TLKEDGA2WOLEVCNKLUX6X5KS47GMWGBHUAVES7J55LY25M"
+		networkPassphrase = "Test SDF Network ; September 2015"
+	)
+	signer, err := keypair.FromRawSeed([32]byte{1})
+	if err != nil {
+		log.Fatal(err)
+	}
+	entry, err := AuthorizeInvocation(networkPassphrase, signer, contractID, "close", nil, 1000)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// Credentials type is deterministic; the nonce is random each call.
+	fmt.Println(entry.Credentials.Type == xdr.SorobanCredentialsTypeSorobanCredentialsAddress)
+	fmt.Println(string(entry.RootInvocation.Function.ContractFn.FunctionName))
+	// Output:
+	// true
+	// close
+}
+
 func ExampleErrTransactionFailed_Error() {
 	err := &ErrTransactionFailed{
 		Hash:      "83806937259d185c694da8e4efd7d8e7e859c8df235f8f77895f244c999068d3",

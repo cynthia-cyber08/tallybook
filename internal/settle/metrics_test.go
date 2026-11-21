@@ -3,6 +3,7 @@ package settle
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -12,8 +13,28 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/Tallybook-Org/tallybook/internal/httpserver"
 )
+
+func ExampleMetrics_ServeHTTP() {
+	// ServeHTTP always sets Content-Type to Prometheus text format.
+	// A metric that fails to collect is logged and omitted; the endpoint
+	// still serves 200 with whatever data it could gather (partial data
+	// beats no data). Here all queries fail because the context is
+	// already cancelled before ServeHTTP is called.
+	pool, _ := pgxpool.New(context.Background(), "host=localhost user=unused dbname=unused port=5432")
+	m := NewMetrics(pool, fakeLedgerSource{ledger: 0}, nil)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	req := httptest.NewRequest("GET", "/metrics", nil).WithContext(ctx)
+	w := httptest.NewRecorder()
+	m.ServeHTTP(w, req)
+	fmt.Println(w.Header().Get("Content-Type"))
+	// Output:
+	// text/plain; version=0.0.4; charset=utf-8
+}
 
 func serveMetrics(t *testing.T, m *Metrics) string {
 	t.Helper()
@@ -212,7 +233,7 @@ func TestMetricsConcurrentReadersServeWithinTimeout(t *testing.T) {
 	serveErr := make(chan error, 1)
 	go func() { serveErr <- srv.Serve(listener) }()
 	t.Cleanup(func() {
-		if err := srv.Close(); err != nil && err != http.ErrServerClosed {
+		if err := srv.Close(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			t.Errorf("close metrics server: %v", err)
 		}
 		<-serveErr

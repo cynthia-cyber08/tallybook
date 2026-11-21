@@ -35,6 +35,28 @@ func ExampleDecodeU32() {
 	// 42
 }
 
+func ExampleDecodeI32() {
+	i := xdr.Int32(-42)
+	v, err := DecodeI32(xdr.ScVal{Type: xdr.ScValTypeScvI32, I32: &i})
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(v)
+	// Output:
+	// -42
+}
+
+func ExampleDecodeI64() {
+	i := xdr.Int64(9007199254740992)
+	v, err := DecodeI64(xdr.ScVal{Type: xdr.ScValTypeScvI64, I64: &i})
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(v)
+	// Output:
+	// 9007199254740992
+}
+
 func ExampleScvI32() {
 	v, err := DecodeI32(ScvI32(-42))
 	if err != nil {
@@ -100,6 +122,30 @@ func ExampleScvAddress() {
 	// GAAACAQDAQCQMBYIBEFAWDANBYHRAEISCMKBKFQXDAMRUGY4DUPB7JZX
 }
 
+func ExampleDecodeAddress() {
+	v, err := ScvAddress("GAAACAQDAQCQMBYIBEFAWDANBYHRAEISCMKBKFQXDAMRUGY4DUPB7JZX")
+	if err != nil {
+		log.Fatal(err)
+	}
+	addr, err := DecodeAddress(v)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(addr)
+	// Output:
+	// GAAACAQDAQCQMBYIBEFAWDANBYHRAEISCMKBKFQXDAMRUGY4DUPB7JZX
+}
+
+func ExampleDecodeBool() {
+	v, err := DecodeBool(ScvBool(true))
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(v)
+	// Output:
+	// true
+}
+
 func ExampleErrWrongScValType_Error() {
 	err := &ErrWrongScValType{
 		Want: xdr.ScValTypeScvU32,
@@ -162,6 +208,30 @@ func ExampleDecodeMap() {
 	// Output:
 	// amount=1250 price_v=7
 	// non-symbol key rejected: true
+}
+
+func ExampleDecodeI128() {
+	v, err := ScvI128(big.NewInt(-1_000_000))
+	if err != nil {
+		panic(err)
+	}
+	n, err := DecodeI128(v)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println(n)
+	// Output:
+	// -1000000
+}
+
+func ExampleDecodeBytes() {
+	got, err := DecodeBytes(ScvBytes([]byte{0xde, 0xad, 0xbe, 0xef}))
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("%x\n", got)
+	// Output:
+	// deadbeef
 }
 
 func TestScvU32_RoundTrip(t *testing.T) {
