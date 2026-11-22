@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 // ExampleRecorder shows how a caller actually obtains and uses a Recorder.
@@ -805,4 +806,110 @@ func (printRecorder) RecordRequest(_ context.Context, req RecordedRequest) error
 	fmt.Printf("recorded: %s %s consumer %s protocol %s\n", req.Method, req.PathTemplate, req.Consumer, req.Protocol)
 	fmt.Printf("%d unit(s) charged %s stroops price v%d observed ledger %d\n", req.UnitCount, req.ChargedAmount, req.PriceVersion, req.ObservedLedger)
 	return nil
+}
+
+// ExampleWithRequestInfo shows where WithRequestInfo sits: in the
+// middleware upstream of metering that has established who is paying
+// (in the collector, cmd/collector's header-reading middleware). It
+// attaches the caller's RequestInfo to the request context, and the
+// metering Middleware reads it back. RequestInfo is never derived by the
+// metering layer itself — verifying payment is a non-goal of this
+// package — so a request reaching Middleware without one fails closed
+// with a 500 instead of being recorded against nobody.
+//
+// The ledger, catalog, period, and recorder are the package's own test
+// stubs, so nothing touches Postgres or the network. There is no
+// // Output: line: the example is compiled by `go test` but deliberately
+// not run, so it pins the call shape of WithRequestInfo without
+// duplicating assertions — the round trip and the missing-RequestInfo
+// failure are asserted by TestMiddleware_RecordsAndCallsNext and
+// TestMiddleware_MissingRequestInfoFailsClosed.
+func ExampleWithRequestInfo() {
+	sched, err := meter.ParseSchedule([]byte(`{"rules":[{"method":"GET","path_template":"/v1/items","unit_price":"1000"}]}`))
+	if err != nil {
+		fmt.Println("ParseSchedule:", err)
+		return
+	}
+	catalog, err := meter.NewCatalog(meter.CatalogVersion{Version: 1, EffectiveLedger: 1000, Schedule: sched})
+	if err != nil {
+		fmt.Println("NewCatalog:", err)
+		return
+	}
+
+	metering, err := Middleware(Config{
+		Operator:     "GDOLCHAOYP63BEHGAUJJS5IVQNUXLPBWCHO2HZRBTZRU52XBMW2TRJLM",
+		Method:       "GET",
+		PathTemplate: "/v1/items",
+		Catalogs:     fakeCatalogs{catalog: catalog},
+		Ledger:       fakeLedgerSource{ledger: 1500},
+		Recorder:     &fakeRecorder{},
+		Periods:      fakePeriods{period: &meter.Period{ID: 42}},
+	})
+	if err != nil {
+		fmt.Println("Middleware:", err)
+		return
+	}
+
+	// identify stands in for whatever verified the payment upstream.
+	identify := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			info := RequestInfo{
+				Consumer: "GAJ46LDZSSYAB4YY6VMPM763P652ZROT7TBG3YYE3BZBAUZDXYDDK6OY",
+				Protocol: ProtocolX402,
+			}
+			next.ServeHTTP(w, r.WithContext(WithRequestInfo(r.Context(), info)))
+		})
+	}
+	paid := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/v1/items", nil)
+	rec := httptest.NewRecorder()
+	identify(metering(paid)).ServeHTTP(rec, req)
+}
+
+// ExampleRequestInfoFromContext shows the read side: a handler behind the
+// upstream middleware that called WithRequestInfo retrieves the caller's
+// RequestInfo, and the boolean reports whether one was attached at all.
+// The metering Middleware treats a missing RequestInfo as a wiring bug
+// and fails closed, and any other reader should do the same rather than
+// proceed with the zero value — an empty Consumer would otherwise be
+// metered and billed to nobody.
+//
+// There is no // Output: line: the example is compiled by `go test` but
+// deliberately not run, so it pins the call shape of
+// RequestInfoFromContext without duplicating assertions — both the
+// present and the missing case are asserted by
+// TestMiddleware_RecordsAndCallsNext and
+// TestMiddleware_MissingRequestInfoFailsClosed.
+// It opens no network or database connection.
+func ExampleRequestInfoFromContext() {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		info, ok := RequestInfoFromContext(r.Context())
+		if !ok {
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		fmt.Fprintf(w, "consumer %s via %s", info.Consumer, info.Protocol)
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Present: attached upstream with WithRequestInfo.
+	ctx = WithRequestInfo(ctx, RequestInfo{
+		Consumer: "GAJ46LDZSSYAB4YY6VMPM763P652ZROT7TBG3YYE3BZBAUZDXYDDK6OY",
+		Protocol: ProtocolX402,
+	})
+	handler.ServeHTTP(httptest.NewRecorder(),
+		httptest.NewRequestWithContext(ctx, http.MethodGet, "/v1/items", nil))
+
+	// Missing: a bare context carries no RequestInfo, so ok is false.
+	if _, ok := RequestInfoFromContext(context.Background()); !ok {
+		fmt.Println("no RequestInfo attached")
+	}
 }
