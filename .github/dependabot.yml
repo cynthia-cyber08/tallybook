@@ -1,0 +1,25 @@
+version: 2
+updates:
+  # Group all GitHub Actions updates into a single PR to reduce churn.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  # Go module updates are NOT grouped for direct dependencies: each of
+  # github.com/jackc/pgx/v5 and github.com/stellar/go-stellar-sdk holds
+  # money-moving code, so each bump needs its own CONTRIBUTING justification
+  # commit (see CONTRIBUTING.md). Indirect dependencies are grouped because
+  # they carry no protocol-level risk and individual PRs for transitive
+  # updates create noise.
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      indirect:
+        dependency-type: "indirect"

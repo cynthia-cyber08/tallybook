@@ -87,3 +87,21 @@ func ExampleErrTransactionFailed_Error() {
 	// Output:
 	// stellar: transaction 83806937259d185c694da8e4efd7d8e7e859c8df235f8f77895f244c999068d3 failed on chain
 }
+
+// ExampleBuildCommitment shows the deterministic XDR wire format produced for
+// a concrete contract address, network passphrase, and amount. The output is
+// 192 bytes (12-byte ScMap header, four keyed ScVal entries: I128 amount,
+// Address channel, Symbol domain, BytesN<32> network passphrase hash).
+func ExampleBuildCommitment() {
+	const (
+		contractID  = "CB2IEP4SQ2GC5747HFHNMXEYWEULC5Z5TTTLET2QA4CAA5SYCWAXFKAW"
+		networkPass = "Test SDF Network ; September 2015"
+	)
+	b, err := BuildCommitment(contractID, networkPass, big.NewInt(12345))
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(len(b))
+	// Output:
+	// 192
+}

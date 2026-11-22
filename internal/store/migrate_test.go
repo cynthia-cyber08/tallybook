@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
@@ -59,6 +60,50 @@ func randomSuffix() string {
 	// is interpolated directly into CREATE/DROP DATABASE, which cannot be
 	// parameterized, so it must already be a safe bare identifier.
 	return fmt.Sprintf("%d", time.Now().UnixNano())
+}
+
+// FuzzParseMigrations exercises ParseMigrations with arbitrary in-memory
+// filesystems and asserts two invariants that hold regardless of input:
+//   - the function never panics;
+//   - when it succeeds, the returned slice is in strictly ascending version order.
+//
+// The seed corpus covers the boundary cases the issue asks for: a valid
+// sorted set, an empty filesystem (must yield ErrNoMigrations), a bad
+// filename, duplicate versions, and zero-padded filenames (0010 must sort
+// after 0009, never before it).
+func FuzzParseMigrations(f *testing.F) {
+	f.Add("0001_first.sql\x000002_second.sql\x000010_tenth.sql")
+	f.Add("") // empty → ErrNoMigrations
+	f.Add("not-numbered.sql")
+	f.Add("0001_x.sql\x000001_y.sql") // duplicate version
+	f.Add("0009_nine.sql\x000010_ten.sql")
+	f.Add("0001_a.sql\x000003_c.sql") // version gap: gap is not an error
+
+	f.Fuzz(func(t *testing.T, names string) {
+		fsys := fstest.MapFS{}
+		for _, name := range strings.Split(names, "\x00") {
+			if name != "" {
+				fsys[name] = &fstest.MapFile{Data: []byte("SELECT 1;")}
+			}
+		}
+
+		migrations, err := ParseMigrations(fsys)
+		if err != nil {
+			if len(fsys) == 0 && !errors.Is(err, ErrNoMigrations) {
+				t.Errorf("empty filesystem: got %v, want errors.Is(err, ErrNoMigrations)", err)
+			}
+			return
+		}
+
+		for i := 1; i < len(migrations); i++ {
+			if migrations[i].Version <= migrations[i-1].Version {
+				t.Fatalf(
+					"migrations not in ascending version order: [%d] version=%d, [%d] version=%d",
+					i-1, migrations[i-1].Version, i, migrations[i].Version,
+				)
+			}
+		}
+	})
 }
 
 func TestParseMigrations_SortsByVersion(t *testing.T) {
