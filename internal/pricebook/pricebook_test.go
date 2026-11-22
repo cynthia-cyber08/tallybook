@@ -583,3 +583,57 @@ func ExampleSource_Run() {
 	// production on SIGINT/SIGTERM.
 	<-done
 }
+
+// ExampleSource_CatalogFor shows the call the metering middleware makes on
+// every request. CatalogFor serves a cached catalog without waiting on the
+// chain; if the cache has gone stale it starts a background refresh and
+// still returns the cached one. Only the very first call for an operator
+// waits, because until the schedule arrives there is nothing to price
+// against, and failing the request closed beats serving it unmetered. A
+// stale catalog is still a schedule the operator really published, since
+// price book versions are immutable.
+//
+// The book and fetcher are the package's own test stubs (newFakeBook,
+// published, scheduleDoc), so nothing reaches a Soroban RPC node or an
+// HTTP endpoint. There is no // Output: line on purpose: in production
+// the Book and Fetch behind a Source are the chain and the schedule's
+// URI, so what CatalogFor returns depends on what the operator has
+// published, and a stale-cache call also races a background refresh
+// goroutine against the example's return. Without an Output line
+// `go test` compiles the example but does not run it. It is here to pin
+// the call shape: a signature change breaks the build. Caching and
+// refresh behaviour are covered by this file's tests.
+func ExampleSource_CatalogFor() {
+	doc := scheduleDoc("1000")
+	const uri = "https://example.com/schedule.json"
+	source, err := NewSource(Config{
+		Book:  newFakeBook(published(1, 1000, doc, uri)),
+		Fetch: func(context.Context, string) ([]byte, error) { return doc, nil },
+	})
+	if err != nil {
+		fmt.Println("new source:", err)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// First call: nothing is cached yet, so this one waits on the chain.
+	catalog, err := source.CatalogFor(ctx, testOperator)
+	if err != nil {
+		fmt.Println("catalog:", err)
+		return
+	}
+	price, err := catalog.Price(1500, "GET", "/v1/items", 1)
+	if err != nil {
+		fmt.Println("price:", err)
+		return
+	}
+	fmt.Println("charged:", price.ChargedAmount, "price version:", price.PriceVersion)
+
+	// Later calls are served from the cache without touching the chain.
+	if _, err := source.CatalogFor(ctx, testOperator); err != nil {
+		fmt.Println("catalog:", err)
+		return
+	}
+}
