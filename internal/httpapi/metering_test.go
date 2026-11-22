@@ -871,3 +871,45 @@ func ExampleWithRequestInfo() {
 	rec := httptest.NewRecorder()
 	identify(metering(paid)).ServeHTTP(rec, req)
 }
+
+// ExampleRequestInfoFromContext shows the read side: a handler behind the
+// upstream middleware that called WithRequestInfo retrieves the caller's
+// RequestInfo, and the boolean reports whether one was attached at all.
+// The metering Middleware treats a missing RequestInfo as a wiring bug
+// and fails closed, and any other reader should do the same rather than
+// proceed with the zero value — an empty Consumer would otherwise be
+// metered and billed to nobody.
+//
+// There is no // Output: line: the example is compiled by `go test` but
+// deliberately not run, so it pins the call shape of
+// RequestInfoFromContext without duplicating assertions — both the
+// present and the missing case are asserted by
+// TestMiddleware_RecordsAndCallsNext and
+// TestMiddleware_MissingRequestInfoFailsClosed.
+// It opens no network or database connection.
+func ExampleRequestInfoFromContext() {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		info, ok := RequestInfoFromContext(r.Context())
+		if !ok {
+			http.Error(w, "internal server error", http.StatusInternalServerError)
+			return
+		}
+		fmt.Fprintf(w, "consumer %s via %s", info.Consumer, info.Protocol)
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	// Present: attached upstream with WithRequestInfo.
+	ctx = WithRequestInfo(ctx, RequestInfo{
+		Consumer: "GAJ46LDZSSYAB4YY6VMPM763P652ZROT7TBG3YYE3BZBAUZDXYDDK6OY",
+		Protocol: ProtocolX402,
+	})
+	handler.ServeHTTP(httptest.NewRecorder(),
+		httptest.NewRequestWithContext(ctx, http.MethodGet, "/v1/items", nil))
+
+	// Missing: a bare context carries no RequestInfo, so ok is false.
+	if _, ok := RequestInfoFromContext(context.Background()); !ok {
+		fmt.Println("no RequestInfo attached")
+	}
+}
