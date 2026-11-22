@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/Tallybook-Org/tallybook/internal/convert"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -299,4 +300,68 @@ func ExampleNewReconciler() {
 	// Output:
 	// accepted: true
 	// rejected: true
+}
+
+// ExampleReconciler_ReconcilePeriod shows the call shape of
+// Reconciler.ReconcilePeriod and how a caller handles each kind of result.
+// The function's doc comment lists three sentinels that mean there is
+// nothing to compare yet, and they call for different responses.
+// ErrAnchorEventNotIngested is transient and clears after the next
+// ingestion tick. ErrPeriodNotAnchored means the period has not been
+// anchored on chain yet. ErrPeriodNotFound means the caller passed a bad
+// id. When a Result does come back, BilledMatch and SettledMatch are
+// checked separately, because Result's doc comment explains they mean
+// different things. A billed mismatch is a data integrity bug. A settled
+// mismatch on its own is what a resolved dispute looks like.
+//
+// No // Output: is asserted, so `go test` compiles this example but never
+// runs it. ReconcilePeriod reads periods, requests and chain_events
+// through a live Postgres pool, and a published example must not depend on
+// a reachable database. Compiling it still breaks the build if
+// ReconcilePeriod's signature or Result's fields change, which is the
+// part worth protecting. The pool is built the same way
+// ExampleNewReconciler builds one. pgxpool.New connects lazily, so
+// constructing it opens nothing.
+func ExampleReconciler_ReconcilePeriod() {
+	pool, err := pgxpool.New(context.Background(), "postgres://tallybook:tallybook@localhost:5433/tallybook?sslmode=disable")
+	if err != nil {
+		fmt.Println("open pool:", err)
+		return
+	}
+	defer pool.Close()
+
+	r := NewReconciler(pool)
+
+	// Every external call gets its own timeout (CLAUDE.md §8).
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	const periodID int64 = 42
+	res, err := r.ReconcilePeriod(ctx, periodID)
+	switch {
+	case errors.Is(err, ErrAnchorEventNotIngested):
+		fmt.Println("anchored, but the anchor event is not indexed yet; retry after the next tick")
+		return
+	case errors.Is(err, ErrPeriodNotAnchored):
+		fmt.Println("period not anchored on chain yet; nothing settled to compare")
+		return
+	case errors.Is(err, ErrPeriodNotFound):
+		fmt.Println("no such period")
+		return
+	case err != nil:
+		fmt.Println("reconcile:", err)
+		return
+	}
+
+	switch {
+	case !res.BilledMatch:
+		// The collector's own metering disagrees with what was anchored.
+		fmt.Println("integrity: metered", res.MeteredAmount, "but billed", res.AmountBilled)
+	case !res.SettledMatch:
+		// Billed matches; settled does not, e.g. after resolve_dispute
+		// credited the consumer.
+		fmt.Println("settled", res.AmountSettled, "of metered", res.MeteredAmount, "for statement", res.StatementSeq)
+	default:
+		fmt.Println("period", res.PeriodID, "reconciles exactly")
+	}
 }
