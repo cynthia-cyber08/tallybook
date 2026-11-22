@@ -531,3 +531,55 @@ func ExampleFetchFunc() {
 	}
 	fmt.Println("charged:", price.ChargedAmount)
 }
+
+// ExampleSource_Run shows how the collector keeps cached catalogs fresh.
+// Run refreshes every operator the Source has already been asked about
+// once per TTL, until ctx is cancelled. It blocks, so it runs on its own
+// goroutine. A failed refresh is logged and retried on the next tick
+// rather than ending the loop, which is why Run returns nothing: while the
+// chain is unreachable the collector keeps pricing against the last
+// schedule it read. Because published versions are immutable, that
+// schedule is still one the operator really published.
+//
+// The book and fetcher are the package's own test stubs (newFakeBook,
+// published, scheduleDoc), so nothing reaches a Soroban RPC node or an
+// HTTP endpoint. There is no // Output: line on purpose: Run's only
+// observable effects are a swapped cache pointer and slog lines, and when
+// a tick fires relative to the deadline depends on the scheduler, so no
+// output would be deterministic. Without an Output line `go test` compiles
+// the example but does not run it. It is here to pin the call shape: a
+// signature change breaks the build. Refresh behaviour is covered by this
+// file's tests.
+func ExampleSource_Run() {
+	doc := scheduleDoc("1000")
+	const uri = "https://example.com/schedule.json"
+	source, err := NewSource(Config{
+		Book:  newFakeBook(published(1, 1000, doc, uri)),
+		Fetch: func(context.Context, string) ([]byte, error) { return doc, nil },
+		TTL:   time.Minute,
+	})
+	if err != nil {
+		fmt.Println("new source:", err)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	// Run only refreshes operators the source already knows, so ask for
+	// one first, the way the metering middleware does on a request.
+	if _, err := source.CatalogFor(ctx, testOperator); err != nil {
+		fmt.Println("catalog:", err)
+		return
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		source.Run(ctx)
+	}()
+
+	// Run returns once ctx is done: here when the timeout elapses, in
+	// production on SIGINT/SIGTERM.
+	<-done
+}

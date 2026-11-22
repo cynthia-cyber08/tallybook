@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -533,4 +534,46 @@ func ExampleAnchorer_AnchorPeriod() {
 
 	// Output:
 	// anchored with concrete inputs, cancelled context honoured: true
+}
+
+// ExampleAnchorer_ReconcileAnchoring shows the restart step that runs
+// before a period is anchored again. A crash between recording a
+// 'submitting' anchor attempt and confirming it leaves the attempt open;
+// ReconcileAnchoring settles which way it went. anchor's return value (the
+// statement seq) is only known after the call succeeds, so there is no key
+// to look up directly. Instead every seq list_statements returns for the
+// scope is fetched and compared, by period range and a recomputed usage
+// root, with what the attempt would have submitted. A match marks the
+// period anchored; no match marks the attempt failed so AnchorPeriod can
+// try again. Resolved false means there was nothing to reconcile.
+//
+// The pool and StatementReader are the package's own test stubs: an
+// empty fakeStatementReader stands in for statement_registry. There is no
+// // Output: line on purpose: ReconcileAnchoring reads the period, its
+// attempt and its requests from Postgres, so its result depends on
+// database state an example cannot set up without a live database.
+// Without an Output line `go test` compiles the example but does not run
+// it, so the zero-value pool is never dialed. It is here to pin the call
+// shape: a signature change breaks the build. The behaviour is covered by
+// the reconcile tests in anchor_idempotency_test.go.
+func ExampleAnchorer_ReconcileAnchoring() {
+	a := NewAnchorer(&pgxpool.Pool{})
+	statements := &fakeStatementReader{statements: map[uint64]*stellar.Statement{}}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	res, err := a.ReconcileAnchoring(ctx, 1, statements)
+	if err != nil {
+		fmt.Println("reconcile anchoring:", err)
+		return
+	}
+	switch {
+	case !res.Resolved:
+		fmt.Println("nothing to reconcile for period", res.PeriodID)
+	case res.Anchored:
+		fmt.Println("already anchored as statement", res.StatementSeq)
+	default:
+		fmt.Println("attempt marked failed; period", res.PeriodID, "can be anchored again")
+	}
 }
