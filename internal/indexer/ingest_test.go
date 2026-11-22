@@ -582,3 +582,45 @@ func TestFixtures_DecodeAsDocumented(t *testing.T) {
 		t.Errorf("realAnchorEvent AmountBilled = %s, want 2000", an.AmountBilled)
 	}
 }
+
+// ExampleIngestor_Run shows how cmd/indexer drives an Ingestor: build it
+// once with New, then call Run with the polling interval
+// (TB_INDEXER_TICK). Run blocks until ctx is cancelled, so it is started
+// on its own goroutine; a failed tick is logged and retried on the next
+// interval rather than ending the loop, which is why Run returns nothing.
+//
+// The events source and pool are the package's own test stubs, and the
+// timeout is shorter than the interval, so no tick fires and nothing is
+// dialed. There is still no // Output: line: Run's only observable
+// effects are rows written to Postgres and slog lines, neither of which
+// an example can assert deterministically without a live database. The
+// example is therefore compiled by `go test` but not run — it exists to
+// pin Run's call shape, and a signature change breaks the build here.
+// Tick's behaviour is covered by the ingestion and resume tests.
+func ExampleIngestor_Run() {
+	ix, err := New(Config{
+		Client:              &fakeEventsSource{},
+		Pool:                &pgxpool.Pool{},
+		PriceBookID:         testPriceBookID,
+		StatementRegistryID: testRegistryID,
+		OperatorAddress:     testOperator,
+		StartLedger:         testStartLedger,
+	})
+	if err != nil {
+		fmt.Println("New:", err)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ix.Run(ctx, 5*time.Second)
+	}()
+
+	// Run returns once ctx is done: here when the timeout elapses, in
+	// production on SIGINT/SIGTERM.
+	<-done
+}
