@@ -1,0 +1,13 @@
+# CODEOWNERS — routes review for the four packages that move money, hold
+# secrets, or touch on-chain interfaces directly. CONTRIBUTING's "Opening a
+# PR" section calls these out as requiring the closest review; this file
+# enforces that routing automatically so a PR touching them cannot be merged
+# without the right reviewer, regardless of who else is available.
+#
+# Rule: last matching pattern wins. Keep the catch-all last so the
+# money-path rules above it always take precedence for their subtrees.
+
+internal/custody/           @ciscokwiz
+internal/settle/            @ciscokwiz
+internal/store/migrations/  @ciscokwiz
+internal/stellar/           @ciscokwiz

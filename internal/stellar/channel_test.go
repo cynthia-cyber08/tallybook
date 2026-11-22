@@ -10,6 +10,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
+
+	"github.com/stellar/go-stellar-sdk/keypair"
 )
 
 // TestBuildCommitment_MatchesIndependentDerivation checks BuildCommitment's
@@ -277,4 +280,122 @@ func simulateResultServer(t *testing.T, resultXDR string) *httptest.Server {
 	}))
 	t.Cleanup(srv.Close)
 	return srv
+}
+
+// ExampleChannel_Balance demonstrates how to query the current token balance
+// of a payment channel.
+//
+// There is deliberately no // Output: comment. Balance requires a live Soroban
+// RPC endpoint to simulate the read call on chain. Without an Output comment,
+// go test compiles this example to protect against signature drift without
+// executing it or opening a live network connection.
+func ExampleChannel_Balance() {
+	const (
+		contractID        = "CB2IEP4SQ2GC5747HFHNMXEYWEULC5Z5TTTLET2QA4CAA5SYCWAXFKAW"
+		networkPassphrase = "Test SDF Network ; September 2015"
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	channel := NewChannel(NewClient("https://soroban-testnet.stellar.org", nil), contractID, networkPassphrase)
+	balance, err := channel.Balance(ctx)
+	if err != nil {
+		fmt.Println("balance:", err)
+		return
+	}
+	fmt.Println("channel balance:", balance)
+}
+
+// ExampleChannel_Close shows the call shape of Channel.Close: authorized by
+// the recipient, it closes the channel using a signed cumulative commitment,
+// withdrawing the unsettled difference to the recipient and attempting to
+// refund the funder.
+//
+// There is deliberately no // Output: comment. Close submits a transaction
+// to a live Soroban RPC endpoint and requires an active channel, a funded
+// recipient signer, and a valid funder signature. Without an Output comment,
+// go test compiles this example to protect against signature drift without
+// executing it or opening a live network connection.
+func ExampleChannel_Close() {
+	const (
+		contractID        = "CB2IEP4SQ2GC5747HFHNMXEYWEULC5Z5TTTLET2QA4CAA5SYCWAXFKAW"
+		networkPassphrase = "Test SDF Network ; September 2015"
+	)
+	recipient, err := keypair.FromRawSeed([32]byte{1})
+	if err != nil {
+		fmt.Println("recipient key:", err)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	channel := NewChannel(NewClient("https://soroban-testnet.stellar.org", nil), contractID, networkPassphrase)
+	amount := big.NewInt(10_000)
+	var sig [64]byte
+
+	hash, err := channel.Close(ctx, recipient, amount, sig)
+	if err != nil {
+		fmt.Println("close:", err)
+		return
+	}
+	fmt.Println("close submitted:", hash)
+}
+
+// ExampleChannel_CloseStart shows the call shape of Channel.CloseStart: the
+// funder initiates closing the channel, which becomes effective after
+// RefundWaitingPeriod ledgers.
+//
+// There is deliberately no // Output: comment. CloseStart submits an on-chain
+// transaction via Soroban RPC and requires a live network, an active channel,
+// and a funded funder account. Without an Output comment, go test compiles
+// this example to protect against signature drift without executing it or
+// opening a live network connection.
+func ExampleChannel_CloseStart() {
+	const (
+		contractID        = "CB2IEP4SQ2GC5747HFHNMXEYWEULC5Z5TTTLET2QA4CAA5SYCWAXFKAW"
+		networkPassphrase = "Test SDF Network ; September 2015"
+	)
+	funder, err := keypair.FromRawSeed([32]byte{1})
+	if err != nil {
+		fmt.Println("funder key:", err)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	channel := NewChannel(NewClient("https://soroban-testnet.stellar.org", nil), contractID, networkPassphrase)
+	hash, err := channel.CloseStart(ctx, funder)
+	if err != nil {
+		fmt.Println("close_start:", err)
+		return
+	}
+	fmt.Println("close_start submitted:", hash)
+}
+
+// ExampleChannel_Deposited demonstrates how to query the cumulative total
+// amount ever deposited into a payment channel.
+//
+// There is deliberately no // Output: comment. Deposited requires a live
+// Soroban RPC endpoint to simulate the read call on chain. Without an Output
+// comment, go test compiles this example to protect against signature drift
+// without executing it or opening a live network connection.
+func ExampleChannel_Deposited() {
+	const (
+		contractID        = "CB2IEP4SQ2GC5747HFHNMXEYWEULC5Z5TTTLET2QA4CAA5SYCWAXFKAW"
+		networkPassphrase = "Test SDF Network ; September 2015"
+	)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	channel := NewChannel(NewClient("https://soroban-testnet.stellar.org", nil), contractID, networkPassphrase)
+	deposited, err := channel.Deposited(ctx)
+	if err != nil {
+		fmt.Println("deposited:", err)
+		return
+	}
+	fmt.Println("total deposited:", deposited)
 }

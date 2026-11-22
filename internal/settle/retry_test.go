@@ -56,6 +56,28 @@ func ExampleIsPermanent() {
 	// false
 }
 
+// ExampleDefaultRetryOptions shows the concrete backoff parameters that
+// DefaultRetryOptions sets for a given deadline. All fields except Now,
+// Sleep, and Jitter (which default to nil, resolved at call time) are
+// deterministic given the deadline.
+func ExampleDefaultRetryOptions() {
+	deadline := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	opts := DefaultRetryOptions(deadline)
+	fmt.Println(opts.InitialDelay)
+	fmt.Println(opts.MaxDelay)
+	fmt.Println(opts.Multiplier)
+	fmt.Println(opts.TightenAfter)
+	fmt.Println(opts.TightenedDelay)
+	fmt.Println(opts.Deadline.Equal(deadline))
+	// Output:
+	// 2s
+	// 2m0s
+	// 2
+	// 30m0s
+	// 15s
+	// true
+}
+
 func TestIsPermanent(t *testing.T) {
 	tests := []struct {
 		name string
