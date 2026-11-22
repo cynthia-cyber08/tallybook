@@ -2,15 +2,21 @@ package stellar
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/stellar/go-stellar-sdk/xdr"
 )
 
 // fixtureServer returns an httptest.Server that replays the recorded
@@ -69,6 +75,177 @@ func ExampleRPCError_Error() {
 	fmt.Println(err.Error())
 	// Output:
 	// soroban rpc: code -32602: invalid_xdr
+}
+
+// exampleFixtureClient returns a Client pointed at a loopback httptest.Server
+// that replays the recorded response in testdata/stellar/<name>.json, so an
+// example runs offline against a real testnet response rather than a
+// hand-invented one. The returned func stops the server.
+func exampleFixtureClient(name string) (*Client, func()) {
+	body, err := os.ReadFile(filepath.Join("..", "..", "testdata", "stellar", name+".json"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write(body)
+	}))
+	return NewClient(srv.URL, nil), srv.Close
+}
+
+// ExampleGetLatestLedgerResult shows that a caller never fills in a
+// GetLatestLedgerResult itself: it has no request-side fields, and every
+// field is set by GetLatestLedger from the RPC node's response. The zero
+// value's Sequence of 0 is not a ledger, so a caller only trusts a result
+// that came back with a nil error. Sequence is what the collector and
+// settler read as "the current ledger"; CloseTime is a unix timestamp in
+// seconds, carried as a string.
+func ExampleGetLatestLedgerResult() {
+	var zero GetLatestLedgerResult
+	fmt.Printf("zero value: sequence=%d closeTime=%q\n", zero.Sequence, zero.CloseTime)
+
+	// Replays the recorded testnet getLatestLedger response
+	// (testdata/stellar/get_latest_ledger.json).
+	client, stop := exampleFixtureClient("get_latest_ledger")
+	defer stop()
+
+	latest, err := client.GetLatestLedger(context.Background())
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("sequence:", latest.Sequence)
+	fmt.Println("protocol:", latest.ProtocolVersion)
+
+	closeUnix, err := strconv.ParseInt(latest.CloseTime, 10, 64)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("closed at:", time.Unix(closeUnix, 0).UTC().Format(time.RFC3339))
+
+	// Output:
+	// zero value: sequence=0 closeTime=""
+	// sequence: 4611229
+	// protocol: 28
+	// closed at: 2026-09-10T22:35:32Z
+}
+
+// ExampleGetLedgerEntriesResult shows a GetLedgerEntriesResult as
+// GetLedgerEntries fills it in: the caller supplies only the keys, and the
+// RPC node supplies every field of the result. A key with no live entry is
+// simply absent from Entries rather than an error, so the zero value's empty
+// Entries reads the same as "not found" (fetchSequenceNumber in invoke.go
+// relies on exactly that); a caller matches entries by Key rather than by
+// position. LatestLedger is the ledger the node answered at, which is what a
+// LiveUntilLedgerSeq is measured against.
+func ExampleGetLedgerEntriesResult() {
+	var zero GetLedgerEntriesResult
+	fmt.Println("zero value: entries =", len(zero.Entries), "latestLedger =", zero.LatestLedger)
+
+	// Replays the recorded testnet getLedgerEntries response for contract
+	// CDLZFC3SYJYDZT7K67VZ75HPJVIEUVNIXF47ZG2FB2RMQQVU2HHGCYSC's instance
+	// key (testdata/stellar/get_ledger_entries.json).
+	client, stop := exampleFixtureClient("get_ledger_entries")
+	defer stop()
+
+	const instanceKey = "AAAABgAAAAHXkotywnA8z+r365/0701QSlWouXn8m0UOoshCtNHOYQAAABQAAAAB"
+	result, err := client.GetLedgerEntries(context.Background(), []string{instanceKey})
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("entries:", len(result.Entries))
+	fmt.Println("latestLedger:", result.LatestLedger)
+
+	for _, entry := range result.Entries {
+		if entry.Key != instanceKey {
+			continue
+		}
+		fmt.Println("ledgers until archival:", entry.LiveUntilLedgerSeq-result.LatestLedger)
+	}
+
+	// Output:
+	// zero value: entries = 0 latestLedger = 0
+	// entries: 1
+	// latestLedger: 4611230
+	// ledgers until archival: 2950337
+}
+
+// ExampleLedgerEntryChange reads the StateChanges of a real simulation:
+// the recorded testnet simulateTransaction response for a price_book
+// publish call (testdata/stellar/pricebook_publish_02_simulate.json),
+// decoded with the same JSON tags SimulateTransaction uses. A caller never
+// builds a LedgerEntryChange; the RPC node reports one per ledger entry the
+// invocation would write. Before is nil for an entry the call creates and
+// After is nil for one it deletes, which is why both are pointers: the zero
+// value, with an empty Type and two nil pointers, is not a change at all.
+// Key is a base64 LedgerKey; Before and After are base64 LedgerEntry XDR.
+func ExampleLedgerEntryChange() {
+	var zero LedgerEntryChange
+	fmt.Printf("zero value: type=%q before=%t after=%t\n", zero.Type, zero.Before != nil, zero.After != nil)
+
+	raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "stellar", "pricebook_publish_02_simulate.json"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	var resp struct {
+		Result SimulateTransactionResult `json:"result"`
+	}
+	if err := json.Unmarshal(raw, &resp); err != nil {
+		log.Fatal(err)
+	}
+
+	for _, change := range resp.Result.StateChanges {
+		var key xdr.LedgerKey
+		if err := xdr.SafeUnmarshalBase64(change.Key, &key); err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("%s %s: before=%t after=%t\n", change.Type, key.Type, change.Before != nil, change.After != nil)
+	}
+
+	// Output:
+	// zero value: type="" before=false after=false
+	// updated LedgerEntryTypeContractData: before=true after=true
+	// updated LedgerEntryTypeContractData: before=true after=true
+	// created LedgerEntryTypeContractData: before=false after=true
+}
+
+// ExampleLedgerEntryResult reads two LedgerEntryResults as GetLedgerEntries
+// fills them in from recorded testnet responses. Every field is set by the
+// RPC node, never by the caller. XDR decodes as LedgerEntryData, the same
+// way fetchSequenceNumber in invoke.go reads an account's sequence number.
+// LiveUntilLedgerSeq only applies to Soroban entries, which carry a TTL: a
+// classic account entry has none, the node omits the field, and it decodes
+// to 0, the same as the zero value. So 0 here means "no TTL", not "expired".
+func ExampleLedgerEntryResult() {
+	var zero LedgerEntryResult
+	fmt.Println("zero value: lastModified =", zero.LastModifiedLedgerSeq, "liveUntil =", zero.LiveUntilLedgerSeq)
+
+	// A contract instance entry (testdata/stellar/get_ledger_entries.json)
+	// and a classic account entry fetched for a sequence number
+	// (testdata/stellar/pricebook_publish_01_getledgerentries_account.json).
+	fixtures := []struct{ name, key string }{
+		{"get_ledger_entries", "AAAABgAAAAHXkotywnA8z+r365/0701QSlWouXn8m0UOoshCtNHOYQAAABQAAAAB"},
+		{"pricebook_publish_01_getledgerentries_account", "AAAAAAAAAACxo2Y62NJF7xUghukoiQ0XteQyuJfdetk9gOOSFFdt4A=="},
+	}
+	for _, f := range fixtures {
+		client, stop := exampleFixtureClient(f.name)
+		result, err := client.GetLedgerEntries(context.Background(), []string{f.key})
+		stop()
+		if err != nil {
+			log.Fatal(err)
+		}
+		entry := result.Entries[0]
+
+		var data xdr.LedgerEntryData
+		if err := xdr.SafeUnmarshalBase64(entry.XDR, &data); err != nil {
+			log.Fatal(err)
+		}
+		fmt.Printf("%s: lastModified = %d liveUntil = %d\n", data.Type, entry.LastModifiedLedgerSeq, entry.LiveUntilLedgerSeq)
+	}
+
+	// Output:
+	// zero value: lastModified = 0 liveUntil = 0
+	// LedgerEntryTypeContractData: lastModified = 4609662 liveUntil = 7561567
+	// LedgerEntryTypeAccount: lastModified = 4611396 liveUntil = 0
 }
 
 func TestClient_GetLatestLedger(t *testing.T) {
