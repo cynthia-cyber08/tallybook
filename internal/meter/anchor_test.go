@@ -613,3 +613,45 @@ func ExampleAnchorer_DueForAnchoring() {
 			c.PeriodID, c.Protocol, c.Consumer, c.PeriodStart, c.PeriodEnd, c.PriceVersion, c.Channel)
 	}
 }
+
+// ExampleAnchorer_BilledAmount shows how a caller learns a period's billed
+// amount before it chooses amount_settled. BilledAmount sums the period's
+// requests' charged amounts, which is exactly the amount_billed
+// AnchorPeriod will submit. statement_registry rejects a statement whose
+// settled amount exceeds its billed amount, so a caller capping the
+// settled figure — as internal/anchor does for an mpp_session channel,
+// whose withdrawals are cumulative across periods — has to know the
+// billed one first. Money stays a *big.Int throughout (CLAUDE.md §8).
+//
+// The pool is the zero-value stub ExampleAnchorer_ReconcileAnchoring also
+// uses. There is no // Output: line on purpose: BilledAmount reads the
+// period and its requests from Postgres, so its result depends on
+// database state an example cannot set up without a live database.
+// Without an Output line `go test` compiles the example but does not run
+// it, so the zero-value pool is never dialed. It is here to pin the call
+// shape: a signature change breaks the build.
+func ExampleAnchorer_BilledAmount() {
+	a := NewAnchorer(&pgxpool.Pool{})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	billed, err := a.BilledAmount(ctx, 1)
+	if err != nil {
+		// An empty period wraps ErrPeriodEmpty: there is nothing to
+		// anchor, and the chain rejects an empty statement anyway.
+		if errors.Is(err, ErrPeriodEmpty) {
+			fmt.Println("period 1 has no requests to anchor")
+			return
+		}
+		fmt.Println("billed amount:", err)
+		return
+	}
+
+	// Cap what the caller believes has settled at what was billed.
+	settled := big.NewInt(5000)
+	if settled.Cmp(billed) > 0 {
+		settled = billed
+	}
+	fmt.Println("amount billed:", billed, "amount settled:", settled)
+}
