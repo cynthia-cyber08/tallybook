@@ -472,3 +472,62 @@ func ExampleSource() {
 	// charged: 1000 price version: 1
 	// tampered document rejected: true
 }
+
+// ExampleFetchFunc shows the seam FetchFunc's doc comment describes. A
+// Source never fetches anything itself; it calls whatever FetchFunc it was
+// configured with. In production that is HTTPFetcher.Fetch, passed as a
+// method value. In the tests it is a plain function literal that returns a
+// fixture, which is how this package's tests run without a network.
+// Whichever one is used, Source still checks the returned bytes against the
+// schedule hash published on chain before it trusts them.
+//
+// No // Output: is asserted, so `go test` compiles this example but never
+// runs it. The production half wires up a fetcher that would make a real
+// HTTP request, and a published example must not depend on a reachable
+// endpoint. Compiling it still breaks the build if FetchFunc's signature
+// changes, or if HTTPFetcher.Fetch stops satisfying it. The test half uses
+// the package's existing fakeBook, published, and scheduleDoc stubs.
+func ExampleFetchFunc() {
+	// Production: the HTTP fetcher's method value is a FetchFunc.
+	var production FetchFunc = NewHTTPFetcher(&http.Client{Timeout: DefaultHTTPTimeout}).Fetch
+	_ = production
+
+	// Tests: any function with the same shape is a FetchFunc. This one
+	// serves a fixed document and still honours cancellation, as every
+	// I/O seam must (CLAUDE.md §8).
+	doc := scheduleDoc("1000")
+	const uri = "https://example.com/schedule.json"
+	var stub FetchFunc = func(ctx context.Context, got string) ([]byte, error) {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if got != uri {
+			return nil, fmt.Errorf("unexpected uri %q", got)
+		}
+		return doc, nil
+	}
+
+	source, err := NewSource(Config{
+		Book:  newFakeBook(published(1, 1000, doc, uri)),
+		Fetch: stub,
+	})
+	if err != nil {
+		fmt.Println("new source:", err)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	catalog, err := source.CatalogFor(ctx, testOperator)
+	if err != nil {
+		fmt.Println("catalog:", err)
+		return
+	}
+	price, err := catalog.Price(1500, "GET", "/v1/items", 1)
+	if err != nil {
+		fmt.Println("price:", err)
+		return
+	}
+	fmt.Println("charged:", price.ChargedAmount)
+}
