@@ -521,3 +521,50 @@ func ExamplePeriodCloser_Run() {
 	// production on SIGINT/SIGTERM.
 	<-done
 }
+
+// ExamplePeriodCloser_CloseDuePeriods shows the calendar trigger in one
+// call: every open period older than maxAge (TB_PERIOD_DURATION) is closed
+// whether or not its price version changed, and the periods actually
+// closed are returned. No replacement period is opened here — the next
+// request for that scope opens one through EnsureOpenPeriod. Each period's
+// closing boundary still comes from closeBoundaryFor, so a period closed
+// on calendar grounds never spans two price versions either; that is why
+// the call needs a CatalogSource, not just the current ledger. One
+// period's failure is logged and skipped rather than failing the batch, so
+// a nil error does not mean every due period was closed: compare the
+// returned slice against what was due.
+//
+// The pool and catalog source are the package's own test stubs. There is
+// no // Output: line on purpose: CloseDuePeriods reads and updates rows in
+// Postgres, so its result depends on database state an example cannot set
+// up without a live database. Without an Output line `go test` compiles
+// the example but does not run it, so the zero-value pool is never dialed.
+// It is here to pin the call shape: a signature change breaks the build.
+// The behaviour is covered by the CloseDuePeriods tests in
+// period_duration_test.go.
+func ExamplePeriodCloser_CloseDuePeriods() {
+	pc := NewPeriodCloser(&pgxpool.Pool{})
+
+	schedule, err := ParseSchedule([]byte(`{"rules":[{"method":"GET","path_template":"/v1/items","unit_price":"100"}]}`))
+	if err != nil {
+		panic(err)
+	}
+	catalog, err := NewCatalog(CatalogVersion{Version: 1, EffectiveLedger: 1000, Schedule: schedule})
+	if err != nil {
+		panic(err)
+	}
+	catalogs := &fakeCatalogSource{catalogs: map[string]*Catalog{testOperator: catalog}}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	// 1500 is the current ledger; 720h is the TB_PERIOD_DURATION default.
+	closed, err := pc.CloseDuePeriods(ctx, catalogs, 1500, 720*time.Hour)
+	if err != nil {
+		fmt.Println("close due periods:", err)
+		return
+	}
+	for _, p := range closed {
+		fmt.Printf("closed period %d\n", p.ID)
+	}
+}
