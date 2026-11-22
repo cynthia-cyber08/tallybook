@@ -583,55 +583,44 @@ func TestFixtures_DecodeAsDocumented(t *testing.T) {
 	}
 }
 
-// ExampleIngestor_Tick shows the call shape of Ingestor.Tick: one bounded
-// ingestion cycle under a caller-supplied deadline, returning how many new
-// events were made durable. Per Tick's doc comment, the events, any channel
-// state changes they cause, and the advanced cursor all commit in a single
-// transaction. A failed Tick therefore never moves the cursor past an event
-// it did not write, and the caller just calls Tick again on the next
-// interval. A re-delivered event is a no-op, not a duplicate, so the count
-// can be smaller than the number of events the RPC node returned.
+// ExampleIngestor_Run shows how cmd/indexer drives an Ingestor: build it
+// once with New, then call Run with the polling interval
+// (TB_INDEXER_TICK). Run blocks until ctx is cancelled, so it is started
+// on its own goroutine; a failed tick is logged and retried on the next
+// interval rather than ending the loop, which is why Run returns nothing.
 //
-// No // Output: is asserted, so `go test` compiles this example but never
-// runs it. Tick reads and writes its cursor and events through a live
-// Postgres pool, and a published example must not depend on a reachable
-// database. Compiling it still breaks the build if Tick's signature
-// changes, which is the part worth protecting. The events source is the
-// package's existing fakeEventsSource stub, so no Soroban RPC endpoint is
-// involved either.
-func ExampleIngestor_Tick() {
-	// pgxpool.New connects lazily, so constructing the pool opens nothing.
-	pool, err := pgxpool.New(context.Background(), "postgres://tallybook:tallybook@localhost:5433/tallybook?sslmode=disable")
-	if err != nil {
-		fmt.Println("open pool:", err)
-		return
-	}
-	defer pool.Close()
-
+// The events source and pool are the package's own test stubs, and the
+// timeout is shorter than the interval, so no tick fires and nothing is
+// dialed. There is still no // Output: line: Run's only observable
+// effects are rows written to Postgres and slog lines, neither of which
+// an example can assert deterministically without a live database. The
+// example is therefore compiled by `go test` but not run — it exists to
+// pin Run's call shape, and a signature change breaks the build here.
+// Tick's behaviour is covered by the ingestion and resume tests.
+func ExampleIngestor_Run() {
 	ix, err := New(Config{
-		Client:              &fakeEventsSource{results: []*stellar.GetEventsResult{{Events: []stellar.EventInfo{realAnchorEvent}}}},
-		Pool:                pool,
+		Client:              &fakeEventsSource{},
+		Pool:                &pgxpool.Pool{},
 		PriceBookID:         testPriceBookID,
 		StatementRegistryID: testRegistryID,
 		OperatorAddress:     testOperator,
 		StartLedger:         testStartLedger,
 	})
 	if err != nil {
-		fmt.Println("new ingestor:", err)
+		fmt.Println("New:", err)
 		return
 	}
 
-	// Every external call gets its own timeout (CLAUDE.md §8). cmd/indexer
-	// runs one Tick per TB_INDEXER_TICK interval, each under its own bound.
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
-	persisted, err := ix.Tick(ctx)
-	if err != nil {
-		// Nothing past the last committed cursor was written; retrying on
-		// the next interval is always safe.
-		fmt.Println("tick:", err)
-		return
-	}
-	fmt.Println("events persisted:", persisted)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		ix.Run(ctx, 5*time.Second)
+	}()
+
+	// Run returns once ctx is done: here when the timeout elapses, in
+	// production on SIGINT/SIGTERM.
+	<-done
 }

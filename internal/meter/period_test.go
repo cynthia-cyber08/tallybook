@@ -475,3 +475,49 @@ func ExampleCatalogSource() {
 	// catalog resolved: true
 	// zero value is nil: true
 }
+
+// fakeLedgerSource is a LedgerSource that always reports one fixed
+// ledger, so PeriodCloser.Run can be wired up without a Soroban RPC node.
+type fakeLedgerSource struct {
+	ledger uint32
+}
+
+func (f fakeLedgerSource) CurrentLedger(context.Context) (uint32, error) {
+	return f.ledger, nil
+}
+
+// ExamplePeriodCloser_Run shows how the collector wires PeriodCloser.Run:
+// a LedgerSource for the current ledger, a CatalogSource for each
+// operator's price versions, the maximum age a period may stay open on
+// calendar grounds alone (TB_PERIOD_DURATION), and the polling interval
+// (TB_COLLECTOR_PERIOD_TICK). Run blocks until ctx is cancelled, so it is
+// started on its own goroutine; a failed tick is logged and retried on
+// the next interval rather than ending the loop, which is why Run returns
+// nothing.
+//
+// The pool, ledger source, and catalog source are the package's own test
+// stubs, and the timeout is shorter than the interval, so no tick fires
+// and nothing is dialed. There is still no // Output: line: Run's only
+// observable effects are rows closed in Postgres and slog lines, neither
+// of which an example can assert deterministically without a live
+// database. The example is therefore compiled by `go test` but not run —
+// it exists to pin Run's call shape, and a signature change breaks the
+// build here. Run's behaviour is covered by the CloseDuePeriods tests.
+func ExamplePeriodCloser_Run() {
+	pc := NewPeriodCloser(&pgxpool.Pool{})
+	ledgers := fakeLedgerSource{ledger: 1500}
+	catalogs := &fakeCatalogSource{catalogs: map[string]*Catalog{}}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		pc.Run(ctx, ledgers, catalogs, 720*time.Hour, time.Minute)
+	}()
+
+	// Run returns once ctx is done: here when the timeout elapses, in
+	// production on SIGINT/SIGTERM.
+	<-done
+}
