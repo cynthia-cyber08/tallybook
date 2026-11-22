@@ -577,3 +577,39 @@ func ExampleAnchorer_ReconcileAnchoring() {
 		fmt.Println("attempt marked failed; period", res.PeriodID, "can be anchored again")
 	}
 }
+
+// ExampleAnchorer_DueForAnchoring shows the list a caller drives anchoring
+// from. DueForAnchoring returns every period whose status is 'closed',
+// oldest first: a period joins the list when it is closed and leaves it
+// when AnchorPeriod marks it anchored, so there is no separate queue to
+// keep in sync. Each candidate carries its protocol and channel because
+// AnchorPeriod deliberately does not work out the statement's token or
+// settled amount on its own; the caller resolves both from those fields
+// before anchoring, the way internal/anchor's Driver.AnchorDue does.
+//
+// The pool is the zero-value stub ExampleAnchorer_ReconcileAnchoring also
+// uses. There is no // Output: line on purpose: DueForAnchoring is a
+// single query against the periods table, so its result is whatever
+// Postgres holds, and an example cannot set that up without a live
+// database. Without an Output line `go test` compiles the example but
+// does not run it, so the zero-value pool is never dialed. It is here to
+// pin the call shape: a signature change, or a change to AnchorCandidate's
+// fields used below, breaks the build.
+func ExampleAnchorer_DueForAnchoring() {
+	a := NewAnchorer(&pgxpool.Pool{})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	candidates, err := a.DueForAnchoring(ctx)
+	if err != nil {
+		fmt.Println("due for anchoring:", err)
+		return
+	}
+	for _, c := range candidates {
+		// Channel is non-empty only for mpp_session periods, whose
+		// settled amount comes from the channel rather than the period.
+		fmt.Printf("period %d: %s consumer %s ledgers %d-%d price v%d channel %q\n",
+			c.PeriodID, c.Protocol, c.Consumer, c.PeriodStart, c.PeriodEnd, c.PriceVersion, c.Channel)
+	}
+}
