@@ -637,3 +637,50 @@ func ExampleSource_CatalogFor() {
 		return
 	}
 }
+
+// ExampleSource_Refresh shows how a caller forces a reload. Refresh
+// re-reads operator's catalog from the chain whatever the cache's
+// freshness, stores it, and returns it. It is the same reload Run performs
+// once per TTL; a caller that needs the newest published version right
+// now, rather than whatever CatalogFor has cached, calls it directly.
+// Unlike CatalogFor it always waits on the chain, so it belongs off the
+// request path.
+//
+// The book and fetcher are the package's own test stubs (newFakeBook,
+// published, scheduleDoc), so nothing reaches a Soroban RPC node or an
+// HTTP endpoint. There is no // Output: line on purpose: in production
+// the Book and Fetch behind a Source are the chain and the schedule's
+// URI, so which version Refresh returns depends on what the operator has
+// published by the time it runs, and no fixed output could describe
+// that. Without an Output line `go test` compiles the example but does
+// not run it. It is here to pin the call shape: a signature change breaks
+// the build. Refresh behaviour is covered by this file's tests.
+func ExampleSource_Refresh() {
+	doc := scheduleDoc("1000")
+	const uri = "https://example.com/schedule.json"
+	source, err := NewSource(Config{
+		Book:  newFakeBook(published(1, 1000, doc, uri)),
+		Fetch: func(context.Context, string) ([]byte, error) { return doc, nil },
+	})
+	if err != nil {
+		fmt.Println("new source:", err)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	catalog, err := source.Refresh(ctx, testOperator)
+	if err != nil {
+		// A failed refresh leaves any cached catalog in place, so
+		// CatalogFor keeps pricing against the last schedule it read.
+		fmt.Println("refresh:", err)
+		return
+	}
+	price, err := catalog.Price(1500, "GET", "/v1/items", 1)
+	if err != nil {
+		fmt.Println("price:", err)
+		return
+	}
+	fmt.Println("charged:", price.ChargedAmount, "price version:", price.PriceVersion)
+}
